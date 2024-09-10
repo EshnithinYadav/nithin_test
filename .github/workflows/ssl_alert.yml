@@ -74,4 +74,4 @@ jobs:
                 'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT:\n\n$message'
               }" $webhook_url
           }
-          send_slack_notificatio
+          send_slack_notification
