@@ -7,7 +7,7 @@ jobs:
     env:
       EXPIRY_THRESHOLD_DAYS: 3000  # Set the expiry threshold to 3000 days
       GCP_GATEWAY_CERTIFICATE_NAME: "stage-gateway"  # certificate name
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}  # Webhook URL as secret
+      SLACK_WEBHOOK_URL_STAGE: ${{ secrets.SLACK_WEBHOOK_URL_STAGE_STAGE }}  # Webhook URL as secret
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_STAGE }}  # Set project ID from secrets
     steps:
       - name: Checkout repository
@@ -61,7 +61,7 @@ jobs:
           if [[ $days_until_expiry -le $expiry_threshold ]]; then
             curl -X POST -H 'Content-type: application/json' --data "{
               'text': 'STAGE Certificate Expiry Alert:\nCert Name: $certificate_name\nDNS Name: $dns_name\nDays Remaining: $days_until_expiry\nEnd Date: $expiry_date'
-            }" "${{ env.SLACK_WEBHOOK_URL }}"
+            }" "${{ env.SLACK_WEBHOOK_URL_STAGE }}"
           else
             echo "The certificate $certificate_name is valid for more than $expiry_threshold days."
           fi
@@ -71,4 +71,4 @@ jobs:
         run: |
           curl -X POST -H 'Content-type: application/json' --data "{
             'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT failure: The workflow GCP Gateway Certificate Expiry Check failed for stage environment.'
-          }" "${{ env.SLACK_WEBHOOK_URL }}"
+          }" "${{ env.SLACK_WEBHOOK_URL_STAGE }}"
