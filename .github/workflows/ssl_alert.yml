@@ -60,7 +60,7 @@ jobs:
                   message=$(cat certificate_expiry_alert.txt)
               fi
               curl -X POST -H 'Content-type: application/json' --data "{
-                'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT:\n\n$message'
+                'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT ( AT expiration detected part ):\n\n$message'
               }" $webhook_url
           }
           send_slack_notification
@@ -71,7 +71,7 @@ jobs:
               local webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
               local message="The workflow GCP Gateway Certificate Expiry Check failed for ${{env.environment}} environment."
               curl -X POST -H 'Content-type: application/json' --data "{
-                'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT:\n\n$message'
+                'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT ( failure part ):\n\n$message'
               }" $webhook_url
           }
           send_slack_notification
