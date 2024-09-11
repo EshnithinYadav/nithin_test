@@ -1,3 +1,33 @@
+name: GCP Gateway Certificate Expiration Check and Send Slack Alerts
+on:
+  workflow_dispatch:  # Allows manual trigger
+jobs:
+  fetch-secrets-and-check-cert-expiry:
+    runs-on: ubuntu-latest
+    env:
+      EXPIRY_THRESHOLD_DAYS: 3000  # Set the expiry threshold to 3000 days
+      GCP_GATEWAY_CERTIFICATE_NAME: "stage-gateway"  # Certificate name
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}  # Webhook URL as secret
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_STAGE }}  # Set project ID from secrets
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Google Auth
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}
+      - name: Setting up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID_STAGE }}
+      - name: Install gke-gcloud-auth-plugin
+        run: |
+          gcloud components install gke-gcloud-auth-plugin
+      - name: Authenticate kubectl
+        run: |
+          gcloud config set project ${{ secrets.GCP_PROJECT_ID_STAGE }}
+          gcloud container clusters get-credentials venu-stage-k8s-01 --zone=us-east4 --project ${{ secrets.GCP_PROJECT_ID_STAGE }}
       - name: Check GCP Gateway Certificate Expiry using SSL certificates
         run: |
           certificate_name="stage-gateway"
@@ -9,34 +39,40 @@
           # Convert the expiration date to epoch time
           expiry_date_epoch=$(date -d "$expiry_date" +%s)
           current_date_epoch=$(date +%s)
-
           # Calculate how many days are left until the certificate expires
           days_until_expiry=$(( (expiry_date_epoch - current_date_epoch) / 86400 ))
           echo "Days until certificate expiry: $days_until_expiry"
 
-          # Define threshold in days (e.g., 30 days)
-          expiry_threshold=30
-
-          # Check if the certificate is expiring within the threshold
-          if [[ $days_until_expiry -le $expiry_threshold ]]; then
-            echo "The certificate $certificate_name will expire in $days_until_expiry days." > certificate_expiry_alert.txt
-          else
-            echo "The certificate $certificate_name is valid for more than $expiry_threshold days. Days left: $days_until_expiry" > certificate_expiry_alert.txt
+          # Check if the certificate has already expired
+          if [[ $days_until_expiry -lt 0 ]]; then
+            echo "The certificate $certificate_name has already expired."
+            exit 0  # Exit without sending a Slack notification
           fi
 
-      - name: Send Slack Alert if Certificate Expiration Detected
+          # If the certificate is valid, create a message with how many days are left
+          echo "The certificate $certificate_name is valid and will expire in $days_until_expiry days." > certificate_expiry_alert.txt
+      - name: Send Slack Alert for Valid Certificate
+        if: ${{ success() }}
         run: |
           send_slack_notification() {
               local webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
               local message=""
-
-              # Always send the message whether the certificate is expiring or valid
               if [ -f certificate_expiry_alert.txt ]; then
                   message=$(cat certificate_expiry_alert.txt)
               fi
-
               curl -X POST -H 'Content-type: application/json' --data "{
                 'text': 'GCP_GATEWAY_CERTIFICATE_STATUS:\n\n$message'
+              }" $webhook_url
+          }
+          send_slack_notification
+      - name: Send alert to Slack on job failure
+        if: ${{ failure() }}
+        run: |
+          send_slack_notification() {
+              local webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+              local message="The workflow GCP Gateway Certificate Expiry Check failed for ${{env.environment}} environment."
+              curl -X POST -H 'Content-type: application/json' --data "{
+                'text': 'GCP_GATEWAY_CERTIFICATE_ALERT:\n\n$message'
               }" $webhook_url
           }
           send_slack_notification
