@@ -1,4 +1,4 @@
-name: GCP Gateway Certificate Expiration Check and Send Slack Alerts
+name: Stage GCP Gateway Certificate Expiration Check and Send Slack Alerts
 on:
   workflow_dispatch:  # Allows manual trigger
 jobs:
