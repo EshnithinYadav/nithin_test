@@ -4,14 +4,27 @@ on:
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
-  # Stage Environment Job
-  GCP-Gateway-Certificate-Expiration-Check-Stage:
+  GCP-Gateway-Certificate-Expiration-Check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [stage, prod]
+        include:
+          - environment: stage
+            GCP_GATEWAY_CERTIFICATE_NAME: "stage-gateway"
+            GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_STAGE }}
+            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}
+            GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}
+            K8S_CLUSTER_NAME: "venu-stage-k8s-01"
+          - environment: prod
+            GCP_GATEWAY_CERTIFICATE_NAME: "gateway-certs"
+            GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}
+            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
+            GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}
+            K8S_CLUSTER_NAME: "venu-prod-k8s"
+
     env:
       EXPIRY_THRESHOLD_DAYS: 300  # Set the expiry threshold to 300 days
-      GCP_GATEWAY_CERTIFICATE_NAME: "stage-gateway"  # stage certificate name
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}  # Webhook URL for stage env
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_STAGE }}  # Set stage project ID from secrets
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -20,12 +33,12 @@ jobs:
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}
+          credentials_json: ${{ matrix.GCP_SERVICE_ACCOUNT_KEY }}
 
       - name: Setting up Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID_STAGE }}
+          project_id: ${{ matrix.GCP_PROJECT_ID }}
 
       - name: Install gke-gcloud-auth-plugin
         run: |
@@ -33,15 +46,15 @@ jobs:
 
       - name: Authenticate kubectl
         run: |
-          gcloud config set project ${{ secrets.GCP_PROJECT_ID_STAGE }}
-          gcloud container clusters get-credentials venu-stage-k8s-01 --zone=us-east4 --project ${{ secrets.GCP_PROJECT_ID_STAGE }}
+          gcloud config set project ${{ matrix.GCP_PROJECT_ID }}
+          gcloud container clusters get-credentials ${{ matrix.K8S_CLUSTER_NAME }} --zone=us-east4 --project ${{ matrix.GCP_PROJECT_ID }}
 
-      - name: Check GCP Gateway Certificate Expiry (Stage)
+      - name: Check GCP Gateway Certificate Expiry
         run: |
-          certificate_name="${{ env.GCP_GATEWAY_CERTIFICATE_NAME }}"
-          project_id="${{ secrets.GCP_PROJECT_ID_STAGE }}"
+          certificate_name="${{ matrix.GCP_GATEWAY_CERTIFICATE_NAME }}"
+          project_id="${{ matrix.GCP_PROJECT_ID }}"
           
-          # Fetch expiry and DNS names for stage certificate
+          # Fetch expiry and DNS names for the certificate
           expiry_date=$(gcloud compute ssl-certificates describe "$certificate_name" --global --format="value(expireTime)")
           dns=$(gcloud compute ssl-certificates describe "$certificate_name" --global --format="value(subjectAlternativeNames)")
 
@@ -52,80 +65,17 @@ jobs:
           expiry_threshold=300
           
           if [[ $days_until_expiry -le $expiry_threshold ]]; then
-            echo "*Certificate Name*: $certificate_name" > certificate_expiry_alert_stage.txt
-            echo "*DNS Names*: $dns" >> certificate_expiry_alert_stage.txt
-            echo "*Expiry Date*: $expiry_date" >> certificate_expiry_alert_stage.txt
-            echo "*Days Until Expiry*: $days_until_expiry" >> certificate_expiry_alert_stage.txt
+            echo "*Certificate Name*: $certificate_name" > certificate_expiry_alert_${{ matrix.environment }}.txt
+            echo "*DNS Names*: $dns" >> certificate_expiry_alert_${{ matrix.environment }}.txt
+            echo "*Expiry Date*: $expiry_date" >> certificate_expiry_alert_${{ matrix.environment }}.txt
+            echo "*Days Until Expiry*: $days_until_expiry" >> certificate_expiry_alert_${{ matrix.environment }}.txt
           fi
 
-      - name: Send Slack Alert for Stage
+      - name: Send Slack Alert
         run: |
-          if [ -f certificate_expiry_alert_stage.txt ]; then
-            message=$(cat certificate_expiry_alert_stage.txt)
+          if [ -f certificate_expiry_alert_${{ matrix.environment }}.txt ]; then
+            message=$(cat certificate_expiry_alert_${{ matrix.environment }}.txt)
             curl -X POST -H 'Content-type: application/json' --data "{
-              'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT (Stage):\n\n$message'
-            }" "${{ env.SLACK_WEBHOOK_URL }}"
-          fi
-
-  # Production Environment Job
-  GCP-Gateway-Certificate-Expiration-Check-Prod:
-    runs-on: ubuntu-latest
-    env:
-      EXPIRY_THRESHOLD_DAYS: 300  # Set the expiry threshold to 300 days
-      GCP_GATEWAY_CERTIFICATE_NAME: "gateway-certs"  # prod certificate name
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}  # Webhook URL for prod env
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}  # Set prod project ID from secrets
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Google Auth
-        id: auth
-        uses: 'google-github-actions/auth@v2'
-        with:
-          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}
-
-      - name: Setting up Cloud SDK
-        uses: 'google-github-actions/setup-gcloud@v2'
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID_PROD }}
-
-      - name: Install gke-gcloud-auth-plugin
-        run: |
-          gcloud components install gke-gcloud-auth-plugin
-
-      - name: Authenticate kubectl
-        run: |
-          gcloud config set project ${{ secrets.GCP_PROJECT_ID_PROD }}
-          gcloud container clusters get-credentials venu-prod-k8s --region us-east4 --project venu-prod-405915
-
-      - name: Check GCP Gateway Certificate Expiry (Prod)
-        run: |
-          certificate_name="${{ env.GCP_GATEWAY_CERTIFICATE_NAME }}"
-          project_id="${{ secrets.GCP_PROJECT_ID_PROD }}"
-          
-          # Fetch expiry and DNS names for prod certificate
-          expiry_date=$(gcloud compute ssl-certificates describe "$certificate_name" --global --format="value(expireTime)")
-          dns=$(gcloud compute ssl-certificates describe "$certificate_name" --global --format="value(subjectAlternativeNames)")
-
-          expiry_date_epoch=$(date -d "$expiry_date" +%s)
-          current_date_epoch=$(date +%s)
-          days_until_expiry=$(( (expiry_date_epoch - current_date_epoch) / 86400 ))
-
-          expiry_threshold=300
-          
-          if [[ $days_until_expiry -le $expiry_threshold ]]; then
-            echo "*Certificate Name*: $certificate_name" > certificate_expiry_alert_prod.txt
-            echo "*DNS Names*: $dns" >> certificate_expiry_alert_prod.txt
-            echo "*Expiry Date*: $expiry_date" >> certificate_expiry_alert_prod.txt
-            echo "*Days Until Expiry*: $days_until_expiry" >> certificate_expiry_alert_prod.txt
-          fi
-
-      - name: Send Slack Alert for Prod
-        run: |
-          if [ -f certificate_expiry_alert_prod.txt ]; then
-            message=$(cat certificate_expiry_alert_prod.txt)
-            curl -X POST -H 'Content-type: application/json' --data "{
-              'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT (Prod):\n\n$message'
-            }" "${{ env.SLACK_WEBHOOK_URL }}"
+              'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT (${{ matrix.environment }}):\n\n$message'
+            }" "${{ matrix.SLACK_WEBHOOK_URL }}"
           fi
