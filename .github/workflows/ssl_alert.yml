@@ -8,25 +8,30 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [stage, prod]  # Define environments for stage and prod
+        environment: [stage, prod]
         include:
           - environment: stage
-            GCP_GATEWAY_CERTIFICATE_NAME: "stage-gateway"  # stage certificate name
-            GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_STAGE }}  # stage project ID
-            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}  # stage Slack webhook
+            GCP_GATEWAY_CERTIFICATE_NAME: "stage-gateway"
+            GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_STAGE }}
+            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}
             GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}
           - environment: prod
-            GCP_GATEWAY_CERTIFICATE_NAME: "gateway-certs"  # prod certificate name
-            GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}  # prod project ID
-            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}  # prod Slack webhook
+            GCP_GATEWAY_CERTIFICATE_NAME: "gateway-certs"
+            GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}
+            SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
             GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}
-    
-    env:
-      EXPIRY_THRESHOLD_DAYS: 300  # Set the expiry threshold to 300 days
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Ensure Secrets Are Available
+        run: |
+          echo "Checking secrets for ${{ matrix.environment }} environment..."
+          if [ -z "${{ matrix.GCP_SERVICE_ACCOUNT_KEY }}" ]; then
+            echo "Error: Missing GCP service account key for ${{ matrix.environment }} environment."
+            exit 1
+          fi
 
       - name: Google Auth
         id: auth
@@ -34,10 +39,15 @@ jobs:
         with:
           credentials_json: ${{ matrix.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - name: Setting up Cloud SDK
+      - name: Set up Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
         with:
           project_id: ${{ matrix.GCP_PROJECT_ID }}
+      
+      - name: Validate GCP Auth
+        run: |
+          gcloud auth list
+          gcloud config get-value project
 
       - name: Install gke-gcloud-auth-plugin
         run: |
