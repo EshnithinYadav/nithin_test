@@ -19,7 +19,7 @@ jobs:
             GCP_GATEWAY_CERTIFICATE_NAME: "gateway-certs"
             GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}
             SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
-            GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}
+            GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}
 
     steps:
       - name: Checkout repository
