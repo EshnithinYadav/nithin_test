@@ -91,3 +91,4 @@ jobs:
             }" "${{ env.SLACK_WEBHOOK_URL }}"
           else
             echo "No alert to send for ${{ matrix.environment }}."
+          fi
