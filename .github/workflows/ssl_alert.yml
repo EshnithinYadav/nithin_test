@@ -20,17 +20,15 @@ jobs:
           if [[ "${{ matrix.environment }}" == "stage" ]]; then
             echo "Setting environment variables for stage..."
             echo "GCP_GATEWAY_CERTIFICATE_NAME=stage-gateway" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "K8S_CLUSTER_NAME=venu-stage-k8s-01" >> $GITHUB_ENV
             echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
           elif [[ "${{ matrix.environment }}" == "prod" ]]; then
             echo "Setting environment variables for prod..."
             echo "GCP_GATEWAY_CERTIFICATE_NAME=gateway-certs" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "K8S_CLUSTER_NAME=venu-prod-k8s" >> $GITHUB_ENV
             echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
           fi
@@ -39,7 +37,7 @@ jobs:
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: ${{ env.GCP_SERVICE_ACCOUNT_KEY }}
+          credentials_json: ${{ matrix.environment == 'stage' && secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE || secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}
 
       - name: Setting up Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
