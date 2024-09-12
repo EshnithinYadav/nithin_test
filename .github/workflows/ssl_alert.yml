@@ -96,6 +96,12 @@ jobs:
       - name: Send alert to Slack on job failure
         if: failure()
         run: |
-          curl -X POST -H 'Content-type: application/json' --data "{
-            'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT:\n\nThe workflow for ${{ matrix.environment }} failed.'
-          }" "${{ env.SLACK_WEBHOOK_URL }}"
+          if [ -z "${{ env.SLACK_WEBHOOK_URL }}" ]; then
+            echo "Error: SLACK_WEBHOOK_URL is not set."
+            exit 1
+          else
+            curl -X POST -H 'Content-type: application/json' --data "{
+              'text': 'GCP_GATEWAY_CERTIFICATE_EXPIRY_ALERT:\n\nThe workflow for ${{ matrix.environment }} failed.'
+            }" "${{ env.SLACK_WEBHOOK_URL }}"
+          fi
+
