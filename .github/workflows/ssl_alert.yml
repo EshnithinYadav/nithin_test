@@ -97,7 +97,7 @@ jobs:
       - name: Authenticate kubectl
         run: |
           gcloud config set project ${{ secrets.GCP_PROJECT_ID_PROD }}
-          gcloud container clusters get-credentials venu-prod-k8s-01 --zone=us-east4 --project ${{ secrets.GCP_PROJECT_ID_PROD }}
+          gcloud container clusters get-credentials venu-prod-k8s --region us-east4 --project venu-prod-405915
 
       - name: Check GCP Gateway Certificate Expiry (Prod)
         run: |
