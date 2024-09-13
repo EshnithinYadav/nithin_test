@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       EXPIRY_THRESHOLD_DAYS: 300  # Set the expiry threshold to 300 days
-      K8S_SECRET_NAME: "gateway-certs"  # Kubernetes secret name for prod
+      K8S_SECRET_NAME: "app-prod-venu-bank-cachain"  # Kubernetes secret name for prod
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}  # Webhook URL as secret
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}  # Set project ID from secrets
     steps:
@@ -31,8 +31,7 @@ jobs:
       - name: Authenticate kubectl
         run: |
           gcloud config set project ${{ secrets.GCP_PROJECT_ID_PROD }}
-          gcloud container clusters get-credentials prod-k8s-cluster --zone=us-west1 --project ${{ secrets.GCP_PROJECT_ID_PROD }}
-
+          gcloud container clusters get-credentials venu-prod-k8s --region us-east4 --project venu-prod-405915
       - name: Get Certificate from Kubernetes Secret
         run: |
           # Fetch the base64-encoded certificate from the Kubernetes secret
