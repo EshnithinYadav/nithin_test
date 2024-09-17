@@ -12,8 +12,8 @@ jobs:
 
     strategy:
       matrix:
-        env: [stage, prod]  # Only stage and prod environments
-
+        env: [dev]  # Define the environments
+# Charen moved the TEST env ingress to the Loadtesting cluster in the same ENV once Charen updates the ingress we can add the test key in the matrix
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -25,7 +25,15 @@ jobs:
 
       - name: Set environment variables
         run: |
-          if [ "${{ matrix.env }}" == "stage" ]; then
+          if [ "${{ matrix.env }}" == "dev" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_DEV }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_DEV }}" >> $GITHUB_ENV
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_DEV }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.env }}" == "test" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_TEST }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_TEST }}" >> $GITHUB_ENV
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_TEST }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.env }}" == "stage" ]; then
             echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
@@ -35,6 +43,7 @@ jobs:
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
+        
 
       - name: Authenticate to Google Cloud
         run: |
@@ -49,23 +58,19 @@ jobs:
           curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/cloud.google.gpg > /dev/null
           sudo apt-get update && sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin
 
+
+
       - name: Get GKE cluster credentials
         run: |
-          # Fetch the cluster name (you need to filter the clusters to match your environment)
-          CLUSTER_NAME=$(gcloud container clusters list --filter="name:venu-stage-k8s-01" --format="value(name)")
-          
-          # Fetch the zone for the cluster
-          CLUSTER_ZONE=$(gcloud container clusters list --filter="name=${CLUSTER_NAME}" --format="value(location)")
-          
-          # Get credentials for the cluster
-          gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
-
+          CLUSTER_NAME=$(gcloud container clusters list --format="value(name)")
+          CLUSTER_ZONE=$(gcloud container clusters list --format="value(location)")
+          gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_ZONE}
 
       - name: Check SSL certificate expiry
         run: |
           # Get the list of ingress names, separated by commas
           names=$(kubectl get ingress | awk 'NR > 1 {printf "%s,", $1}' | sed 's/,$//')
-
+          
           # Initialize the final message with the header
           echo "Following are the INGRESS SSL certificates which will expire within ${{ env.ENVIRONMENT }} ENV:\n" > final_message.txt
 
@@ -87,6 +92,7 @@ jobs:
             expiry_date=$(date -d "$(echo "$validity" | sed 's/Not After : //')" +"%s")
             current_date=$(date +"%s")
             days_remaining=$(( (expiry_date - current_date) / (60*60*24) ))
+            
 
             # Set the threshold for sending alerts
             threshold_days=500
