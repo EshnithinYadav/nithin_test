@@ -48,8 +48,8 @@ jobs:
       - name: Authenticate to Google Cloud
         run: |
           echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-          gcloud config set project ${{ env.GCP_PROJECT_ID }}
+          # gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
+          # gcloud config set project ${{ env.GCP_PROJECT_ID }}
 
       - name: Install gke-gcloud-auth-plugin
         run: |
@@ -71,7 +71,7 @@ jobs:
             CLUSTER_NAME="${CLUSTER_NAMES[i]}"
             CLUSTER_ZONE="${CLUSTER_ZONES[i]}"
             echo "Fetching credentials for Cluster Name: ${CLUSTER_NAME} in Zone: ${CLUSTER_ZONE}"
-            # gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
+            gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
           done
 
 
