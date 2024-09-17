@@ -18,43 +18,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      -  - name: Set environment variables based on matrix
-      - run: |
-      -   if [[ "${{ matrix.environment }}" == "stage" ]]; then
-      -     echo "Setting environment variables for stage..."
-      -     echo "GCP_GATEWAY_CERTIFICATE_NAME=stage-gateway" >> $GITHUB_ENV
-      -     echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
-      -     echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
-      -     echo "K8S_CLUSTER_NAME=venu-stage-k8s-01" >> $GITHUB_ENV
-      -     echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
-      -   elif [[ "${{ matrix.environment }}" == "prod" ]]; then
-      -     echo "Setting environment variables for prod..."
-      -     echo "GCP_GATEWAY_CERTIFICATE_NAME=gateway-certs" >> $GITHUB_ENV
-      -     echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
-      -     echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
-      -     echo "K8S_CLUSTER_NAME=venu-prod-k8s" >> $GITHUB_ENV
-      -     echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
-      -   fi
-    
+      - name: Set environment variables based on matrix
+        run: |
+          if [[ "${{ matrix.environment }}" == "stage" ]]; then
+            echo "Setting environment variables for stage..."
+            echo "GCP_GATEWAY_CERTIFICATE_NAME=stage-gateway" >> $GITHUB_ENV
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
+            echo "K8S_CLUSTER_NAME=venu-stage-k8s-01" >> $GITHUB_ENV
+            echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
+          elif [[ "${{ matrix.environment }}" == "prod" ]]; then
+            echo "Setting environment variables for prod..."
+            echo "GCP_GATEWAY_CERTIFICATE_NAME=gateway-certs" >> $GITHUB_ENV
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
+            echo "K8S_CLUSTER_NAME=venu-prod-k8s" >> $GITHUB_ENV
+            echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
+          fi
+
       - name: Google Auth
-      - id: auth
-      - uses: 'google-github-actions/auth@v2'
-      - with:
-      -   credentials_json: ${{ matrix.environment == 'stage' && secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE || secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}
-    
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: ${{ matrix.environment == 'stage' && secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE || secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}
+
       - name: Setting up Cloud SDK
-      - uses: 'google-github-actions/setup-gcloud@v2'
-      - with:
-      -   project_id: ${{ env.GCP_PROJECT_ID }}
-    
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
       - name: Install gke-gcloud-auth-plugin
-      - run: |
-      -   gcloud components install gke-gcloud-auth-plugin
-    
+        run: |
+          gcloud components install gke-gcloud-auth-plugin
+
       - name: Authenticate kubectl
-      - run: |
-      -   gcloud config set project ${{ env.GCP_PROJECT_ID }}
-      -   gcloud container clusters get-credentials ${{ env.K8S_CLUSTER_NAME }} --zone=${{ env.K8S_ZONE }} --project=${{ env.GCP_PROJECT_ID }}
+        run: |
+          gcloud config set project ${{ env.GCP_PROJECT_ID }}
+          gcloud container clusters get-credentials ${{ env.K8S_CLUSTER_NAME }} --zone=${{ env.K8S_ZONE }} --project=${{ env.GCP_PROJECT_ID }}
 
       - name: Check SSL certificate expiry
         run: |
