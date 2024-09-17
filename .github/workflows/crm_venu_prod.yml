@@ -64,6 +64,8 @@ jobs:
         run: |
           CLUSTER_NAME=$(gcloud container clusters list --format="value(name)")
           CLUSTER_ZONE=$(gcloud container clusters list --format="value(location)")
+          echo "Cluster Name: ${CLUSTER_NAME}"
+          echo "Cluster Zone: ${CLUSTER_ZONE}"
           gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_ZONE}
 
       - name: Check SSL certificate expiry
