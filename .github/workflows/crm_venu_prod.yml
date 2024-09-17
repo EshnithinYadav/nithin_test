@@ -62,11 +62,18 @@ jobs:
 
       - name: Get GKE cluster credentials
         run: |
-          CLUSTER_NAME=$(gcloud container clusters list --format="value(name)")
-          CLUSTER_ZONE=$(gcloud container clusters list --format="value(location)")
+          if [ "${ENVIRONMENT}" = "stage" ]; then
+            CLUSTER_NAME=$(gcloud container clusters list --filter="name:***-k8s-01" --format="value(name)")
+            CLUSTER_ZONE=$(gcloud container clusters list --filter="name:***-k8s-01" --format="value(location)")
+          elif [ "${ENVIRONMENT}" = "prod" ]; then
+            CLUSTER_NAME=$(gcloud container clusters list --filter="name:***-k8s-west-dr" --format="value(name)")
+            CLUSTER_ZONE=$(gcloud container clusters list --filter="name:***-k8s-west-dr" --format="value(location)")
+          fi
+          
           echo "Cluster Name: ${CLUSTER_NAME}"
           echo "Cluster Zone: ${CLUSTER_ZONE}"
           gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_ZONE}
+
 
       - name: Check SSL certificate expiry
         run: |
