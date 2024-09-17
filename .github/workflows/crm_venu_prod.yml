@@ -51,9 +51,15 @@ jobs:
 
       - name: Get GKE cluster credentials
         run: |
-          CLUSTER_NAME=$(gcloud container clusters list --format="value(venu-stage-k8s-01)")
-          CLUSTER_ZONE=$(gcloud container clusters list --format="value(us-east4)")
-          gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_ZONE}
+          # Fetch the cluster name (you need to filter the clusters to match your environment)
+          CLUSTER_NAME=$(gcloud container clusters list --filter="name:venu-stage-k8s-01" --format="value(name)")
+          
+          # Fetch the zone for the cluster
+          CLUSTER_ZONE=$(gcloud container clusters list --filter="name=${CLUSTER_NAME}" --format="value(location)")
+          
+          # Get credentials for the cluster
+          gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
+
 
       - name: Check SSL certificate expiry
         run: |
