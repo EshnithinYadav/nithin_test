@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        env: [dev]  # Define the environments
+        env: [stage]  # Define the environments
 # Charen moved the TEST env ingress to the Loadtesting cluster in the same ENV once Charen updates the ingress we can add the test key in the matrix
     steps:
       - name: Checkout repository
