@@ -60,19 +60,20 @@ jobs:
 
 
 
-      - name: Get GKE cluster credentials
+      - name: Get GKE cluster credentials for all clusters
         run: |
-          if [ "${ENVIRONMENT}" = "stage" ]; then
-            CLUSTER_NAME=$(gcloud container clusters list --filter="name:***-k8s-01" --format="value(name)")
-            CLUSTER_ZONE=$(gcloud container clusters list --filter="name:***-k8s-01" --format="value(location)")
-          elif [ "${ENVIRONMENT}" = "prod" ]; then
-            CLUSTER_NAME=$(gcloud container clusters list --filter="name:***-k8s-west-dr" --format="value(name)")
-            CLUSTER_ZONE=$(gcloud container clusters list --filter="name:***-k8s-west-dr" --format="value(location)")
-          fi
+          # Read clusters into arrays
+          readarray -t CLUSTER_NAMES < <(gcloud container clusters list --format="value(name)")
+          readarray -t CLUSTER_ZONES < <(gcloud container clusters list --format="value(location)")
           
-          echo "Cluster Name: ${CLUSTER_NAME}"
-          echo "Cluster Zone: ${CLUSTER_ZONE}"
-          gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_ZONE}
+          # Loop over each cluster
+          for i in "${!CLUSTER_NAMES[@]}"; do
+            CLUSTER_NAME="${CLUSTER_NAMES[i]}"
+            CLUSTER_ZONE="${CLUSTER_ZONES[i]}"
+            echo "Fetching credentials for Cluster Name: ${CLUSTER_NAME} in Zone: ${CLUSTER_ZONE}"
+            gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
+          done
+
 
 
       - name: Check SSL certificate expiry
