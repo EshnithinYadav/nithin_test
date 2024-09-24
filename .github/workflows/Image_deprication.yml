@@ -41,11 +41,11 @@ jobs:
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
 
-      # - name: Authenticate to Google Cloud
-      #   run: |
-      #     echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
-      #     gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-      #     gcloud config set project ${{ env.GCP_PROJECT_ID }}
+      - name: Authenticate to Google Cloud
+        run: |
+          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
+          gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
+          gcloud config set project ${{ env.GCP_PROJECT_ID }}
 
       - name: Captalize the env name
         run: |
