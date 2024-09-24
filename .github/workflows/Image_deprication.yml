@@ -109,8 +109,10 @@ jobs:
         run: |
           send_slack_notification() {
               local webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-              local message="The workflow List GCP Instances and Send Slack Alerts failed for ${env.environment} environment."
+              local message="The workflow List GCP Instances and Send Slack Alerts failed for $environment environment."
               curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'GCP_INSTANCE_IMAGE_DEPRECATION:\n\n$message'}" $webhook_url
           }
           send_slack_notification
+
+
 
