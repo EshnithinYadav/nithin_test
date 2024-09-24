@@ -32,7 +32,7 @@ jobs:
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_TEST }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_TEST }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_ }}" >> $GITHUB_ENV
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
@@ -41,16 +41,16 @@ jobs:
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
 
-      - name: Authenticate to Google Cloud
-        run: |
-          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-          gcloud config set project ${{ env.GCP_PROJECT_ID }}
-
-      # - name: Captalize the env name
+      # - name: Authenticate to Google Cloud
       #   run: |
-      #     environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
-      #     echo "environment=${environment}" >> $GITHUB_ENV
+      #     echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
+      #     gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
+      #     gcloud config set project ${{ env.GCP_PROJECT_ID }}
+
+      - name: Captalize the env name
+        run: |
+          environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
+          echo "environment=${environment}" >> $GITHUB_ENV
           
 
       - name: Get GCP instances and their zones
@@ -107,6 +107,9 @@ jobs:
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
         run: |
-          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-          message="The SSL certificate expiry check JOB failed for ${{ env.ENVIRONMENT }} environment."
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message'}" "$webhook_url"
+          send_slack_notification() {
+              local webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+              local message="The workflow List GCP Instances and Send Slack Alerts failed for ${{env.environment}} environment."
+              curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'GCP_INSTANCE_IMAGE_DEPRECATION:\n\n$message'}" $webhook_url
+          }
+          send_slack_notification
