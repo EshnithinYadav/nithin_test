@@ -107,9 +107,6 @@ jobs:
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
         run: |
-          send_slack_notification() {
-              local webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-              local message="The workflow List GCP Instances and Send Slack Alerts failed for ${{matrix.environment}} environment."
-              curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'GCP_INSTANCE_IMAGE_DEPRECATION:\n\n$message'}" $webhook_url
-          }
-          send_slack_notification
+          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+          message="The SSL certificate expiry check JOB failed for ${{ env.ENVIRONMENT }} environment."
+          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message'}" "$webhook_url"
