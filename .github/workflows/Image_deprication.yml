@@ -101,18 +101,16 @@ jobs:
 
       - name: Capitalize the env name
         run: |
-          environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
-          echo "environment=$environment" >> $GITHUB_ENV
+          echo "ENVIRONMENT=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')" >> $GITHUB_ENV
 
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
         run: |
           send_slack_notification() {
               local webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-              local message="The workflow List GCP Instances and Send Slack Alerts failed for $environment environment."
+              local message="The workflow List GCP Instances and Send Slack Alerts failed for ${ENVIRONMENT} environment."
               curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'GCP_INSTANCE_IMAGE_DEPRECATION:\n\n$message'}" $webhook_url
           }
           send_slack_notification
-
 
 
