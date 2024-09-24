@@ -46,11 +46,6 @@ jobs:
           echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
-
-      - name: Captalize the env name
-        run: |
-          environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
-          echo "environment=${environment}" >> $GITHUB_ENV
           
 
       - name: Get GCP instances and their zones
@@ -103,6 +98,11 @@ jobs:
               curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'GCP_INSTANCE_IMAGE_DEPRECATION:\n\n$message'}" $webhook_url
           }
           send_slack_notification
+
+      - name: Captalize the env name
+        run: |
+          environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
+          echo "environment=${environment}" >> $GITHUB_ENV
 
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
