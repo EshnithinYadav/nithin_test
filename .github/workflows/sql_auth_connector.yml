@@ -1,12 +1,10 @@
-name: Fetch Latest Cloud SQL Auth Proxy Version and Send Slack Alerts
+name: Check Cloud SQL Auth Proxy Version and Send Alerts
 
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '30 13 * * 1' # Runs every Monday at 7 PM IST (1:30 PM UTC)
 
 jobs:
-  Fetch_SQL_Auth_Proxy_Version:
+  Check_SQL_Auth_Proxy_Version:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -16,18 +14,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          version: 'latest'
-
       - name: Set environment variables
         run: |
-          if [ "${{ matrix.env }}" == "dev" ]; then
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_DEV }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "stage" ]; then
+          if [ "${{ matrix.env }}" == "stage" ]; then
+            echo "SCRIPT_PATH=scripts/sql-auth-proxy-west4.sh" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
+            echo "SCRIPT_PATH=scripts/sql-auth-proxy-east4.sh" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
 
@@ -35,7 +28,18 @@ jobs:
         run: |
           echo "ENVIRONMENT=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')" >> $GITHUB_ENV
 
-      - name: Fetch Latest Cloud SQL Auth Proxy Version
+      - name: Fetch the current Cloud SQL Auth Proxy version from the file
+        id: get_current_version
+        run: |
+          current_version=$(grep -oP 'v\d+\.\d+\.\d+' ${{ env.SCRIPT_PATH }} | head -1)
+          if [ -z "$current_version" ]; then
+            echo "Failed to fetch the current version from the file."
+            exit 1
+          fi
+          echo "Current version: $current_version"
+          echo "CURRENT_VERSION=$current_version" >> $GITHUB_ENV
+
+      - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
         run: |
           latest_release=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r '.tag_name')
@@ -46,13 +50,17 @@ jobs:
           echo "Latest release version: $latest_release"
           echo "LATEST_VERSION=$latest_release" >> $GITHUB_ENV
 
-      - name: Send Slack Alert with Latest Version
+      - name: Compare versions and send Slack alert if outdated
         run: |
-          message="The latest Cloud SQL Auth Proxy version for ${ENVIRONMENT} environment is ${{ env.LATEST_VERSION }}."
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}'}" ${{ env.SLACK_WEBHOOK_URL }}
+          if [ "${{ env.CURRENT_VERSION }}" != "${{ env.LATEST_VERSION }}" ]; then
+            message="The Cloud SQL Auth Proxy version for ${ENVIRONMENT} environment is outdated. Current version: ${{ env.CURRENT_VERSION }}, Latest version: ${{ env.LATEST_VERSION }}."
+            curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}'}" ${{ env.SLACK_WEBHOOK_URL }}
+          else
+            echo "Cloud SQL Auth Proxy version is up to date."
+          fi
 
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
         run: |
-          message="The workflow to fetch the latest Cloud SQL Auth Proxy version failed for ${ENVIRONMENT} environment."
+          message="The workflow to check Cloud SQL Auth Proxy version failed for ${ENVIRONMENT} environment."
           curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}'}" ${{ env.SLACK_WEBHOOK_URL }}
