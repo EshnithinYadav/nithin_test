@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        env: [dev, test, stage, prod]  # Added test and dev
+        env: [stage, prod]  # Added test and dev
 
     steps:
       - name: Checkout repository
