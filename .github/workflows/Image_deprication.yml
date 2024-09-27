@@ -1,4 +1,4 @@
-name: GCP Instances image deprecation and Send Slack Alerts
+name: GCP old Instances image deprecation and Send Slack Alerts
 
 on:
   workflow_dispatch:
