@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [stage, prod]  # Define the environments
+        env: [test]  # Define the environments
 
     steps:
       - name: Checkout repository
