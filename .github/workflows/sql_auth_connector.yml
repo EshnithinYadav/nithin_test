@@ -17,10 +17,10 @@ jobs:
       - name: Set environment variables
         run: |
           if [ "${{ matrix.env }}" == "stage" ]; then
-            echo "SCRIPT_PATH=scripts/sql-auth-proxy-west4.sh" >> $GITHUB_ENV
+            echo "INSTANCE_TEMPLATE_URL=https://www.googleapis.com/compute/v1/projects/venu-test-403812/global/instanceTemplates/cloudsql-auth-template-20240829-new-template-20092024" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "SCRIPT_PATH=scripts/sql-auth-proxy-east4.sh" >> $GITHUB_ENV
+            echo "INSTANCE_TEMPLATE_URL=https://www.googleapis.com/compute/v1/projects/venu-prod-403812/global/instanceTemplates/cloudsql-auth-template-20240829-new-template-20092024" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
 
@@ -28,12 +28,12 @@ jobs:
         run: |
           echo "ENVIRONMENT=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')" >> $GITHUB_ENV
 
-      - name: Fetch the current Cloud SQL Auth Proxy version from the file
+      - name: Fetch current Cloud SQL Auth Proxy version from GCP instance template metadata
         id: get_current_version
         run: |
-          current_version=$(grep -oP 'v\d+\.\d+\.\d+' ${{ env.SCRIPT_PATH }} | head -1)
+          current_version=$(gcloud compute instance-templates describe ${{ env.INSTANCE_TEMPLATE_URL }} --format="value(properties.metadata.items.startup-script)" | grep -oP 'v\d+\.\d+\.\d+')
           if [ -z "$current_version" ]; then
-            echo "Failed to fetch the current version from the file."
+            echo "Failed to fetch the current version from the instance template."
             exit 1
           fi
           echo "Current version: $current_version"
@@ -53,7 +53,7 @@ jobs:
       - name: Compare versions and send Slack alert if outdated
         run: |
           if [ "${{ env.CURRENT_VERSION }}" != "${{ env.LATEST_VERSION }}" ]; then
-            message="The Cloud SQL Auth Proxy version for ${ENVIRONMENT} environment is outdated. Current version: ${{ env.CURRENT_VERSION }}, Latest version: ${{ env.LATEST_VERSION }}."
+            message="The Cloud SQL Auth Proxy version for ${ENVIRONMENT} environment is outdated. Current version: ${{ env.CURRENT_VERSION }}, Latest version: ${{ env.LATEST_VERSION }}. Please update to the latest version."
             curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}'}" ${{ env.SLACK_WEBHOOK_URL }}
           else
             echo "Cloud SQL Auth Proxy version is up to date."
