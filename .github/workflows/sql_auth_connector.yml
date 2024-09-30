@@ -11,7 +11,7 @@ jobs:
 
     strategy:
       matrix:
-        env: [stage, prod]
+        env: [stage]
 
     steps:
       # ... [previous steps remain the same] ...
