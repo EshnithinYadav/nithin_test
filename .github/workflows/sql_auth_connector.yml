@@ -2,8 +2,8 @@ name: GCP Cloud SQL Auth Proxy Version Check and Send Slack Alerts
 
 on:
   workflow_dispatch:
-  #schedule:
-  #  - cron: '30 13 * * 1' # Runs every Monday at 7 PM IST (1:30 PM UTC)
+  # schedule:
+  #   - cron: '30 13 * * 1' # Runs every Monday at 7 PM IST (1:30 PM UTC)
 
 jobs:
   GCP_SQL_Auth_Proxy_Version_Check:
@@ -48,26 +48,27 @@ jobs:
         run: |
           # Function to extract the SQL Auth Proxy version from instance metadata
           fetch_sql_auth_proxy_version() {
-            local instance_name=$1
-            local zone=$2
+              local instance_name=$1
+              local zone=$2
 
-            # Extract the startup-script metadata which contains the Cloud SQL Auth Proxy version
-            sql_proxy_version=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" | grep -oP 'v\d+\.\d+\.\d+')
+              # Extract the startup-script metadata which contains the Cloud SQL Auth Proxy version
+              sql_proxy_version=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" | grep -oP 'v\d+\.\d+\.\d+')
 
-            if [ -z "$sql_proxy_version" ]; then
-                echo "Warning: No Cloud SQL Auth Proxy version found for instance $instance_name in $zone. Skipping."
-                return 0  # Continue even if this instance doesn't have a proxy version
-            fi
+              if [ -z "$sql_proxy_version" ]; then
+                  echo "Warning: No Cloud SQL Auth Proxy version found for instance $instance_name in $zone. Skipping."
+                  return 0  # Continue even if this instance doesn't have a proxy version
+              fi
 
-            echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
-            echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
-            echo "Logged: $instance_name,$zone,$sql_proxy_version"
+              echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
+              echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
+              echo "Logged: $instance_name,$zone,$sql_proxy_version"
 
-            # Verify if the logging was successful
-            if [ $? -ne 0 ]; then
-                echo "Error: Failed to log SQL Auth Proxy version for instance $instance_name."
-                exit 1
-            fi
+              # Verify if the logging was successful
+              if [ $? -ne 0 ]; then
+                  echo "Error: Failed to log SQL Auth Proxy version for instance $instance_name."
+                  return 1  # Indicate logging error but do not exit the entire script
+              fi
+              return 0  # Return success
           }
 
           # Fetch the instance names and zones dynamically for cloud-sql-connect and sql-proxy
@@ -90,6 +91,8 @@ jobs:
               if [ -f sql_auth_proxy_versions.txt ]; then
                   version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f3)
                   echo "  {\"instance\": \"$instance_name\", \"zone\": \"$zone\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
+              else
+                  echo "Warning: No versions logged yet. Skipping to next instance."
               fi
           done <<< "$instances_and_zones"
 
