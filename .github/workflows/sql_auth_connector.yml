@@ -76,9 +76,13 @@ jobs:
               fetch_sql_auth_proxy_version "$instance_name" "$zone"
           done <<< "$instances_and_zones"
 
-          if [ ! -f sql_auth_proxy_versions.txt ]; then
-              echo "Error: No SQL Auth Proxy versions were found for any instances. Exiting."
-              exit 1
+          # Debugging: Check if the versions file is being created and populated
+          if [ -f sql_auth_proxy_versions.txt ]; then
+              echo "SQL Auth Proxy versions were successfully fetched and saved."
+              cat sql_auth_proxy_versions.txt  # Print out the contents for verification
+          else
+             echo "Error: No SQL Auth Proxy versions were found for any instances. Exiting."
+             exit 1
           fi
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
