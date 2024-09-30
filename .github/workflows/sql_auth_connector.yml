@@ -47,19 +47,19 @@ jobs:
           environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
           echo "environment=${environment}" >> $GITHUB_ENV
 
-      - name: Fetch Cloud SQL Auth Proxy version from instance metadata
+           - name: Fetch Cloud SQL Auth Proxy version from instance metadata
         run: |
           # Function to extract the SQL Auth Proxy version from instance metadata
           fetch_sql_auth_proxy_version() {
               local instance_name=$1
               local zone=$2
-              
+
               # Extract the startup-script metadata which contains the Cloud SQL Auth Proxy version
               sql_proxy_version=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" | grep -oP 'v\d+\.\d+\.\d+')
 
               if [ -z "$sql_proxy_version" ]; then
-                  echo "No Cloud SQL Auth Proxy version found for instance $instance_name."
-                  return
+                  echo "Warning: No Cloud SQL Auth Proxy version found for instance $instance_name in $zone. Skipping."
+                  return 0  # Continue even if this instance doesn't have a proxy version
               fi
 
               echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
@@ -69,10 +69,21 @@ jobs:
           # Fetch the instance names and zones dynamically for cloud-sql-connect and sql-proxy
           instances_and_zones=$(gcloud compute instances list --format="csv[no-heading](name,zone)" | grep -E 'cloud-sql-connect|.*-proxy-*')
 
+          if [ -z "$instances_and_zones" ]; then
+              echo "Error: No instances found matching the criteria."
+              exit 1
+          fi
+
           # Loop through each instance and fetch the SQL Auth Proxy version
           while IFS=, read -r instance_name zone; do
               fetch_sql_auth_proxy_version "$instance_name" "$zone"
           done <<< "$instances_and_zones"
+
+          if [ ! -f sql_auth_proxy_versions.txt ]; then
+              echo "Error: No SQL Auth Proxy versions were found for any instances. Exiting."
+              exit 1
+          fi
+
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
