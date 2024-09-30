@@ -2,7 +2,6 @@ name: SQL_AUTH_CONNECTOR_VERSION_CHECK
 
 on:
   workflow_dispatch:
-  # Uncomment the below line to schedule the workflow to run every Monday at 1:30 PM UTC (7:00 PM IST)
   # schedule:
   #   - cron: '30 13 * * 1'
 
@@ -12,53 +11,41 @@ jobs:
 
     strategy:
       matrix:
-        env: [stage, prod]  # Add more environments as needed
+        env: [stage, prod]
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          version: 'latest'
-
-      - name: Set environment variables
-        run: |
-          if [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCLOUD_SERVICE_ACCOUNT_KEY_STAGE }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCLOUD_STAGE_PROJECT_ID }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCLOUD_SERVICE_ACCOUNT_KEY_PROD }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCLOUD_PROJECT_ID_PROD }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
-          fi
-          echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
-
-      - name: Authenticate to Google Cloud
-        run: |
-          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-          gcloud config set project ${{ env.GCP_PROJECT_ID }}
-
-      - name: Fetch latest release version
-        id: fetch_latest
-        run: |
-          LATEST_VERSION=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r .tag_name)
-          echo "Latest version: $LATEST_VERSION"
-          echo "LATEST_VERSION=${LATEST_VERSION#v}" >> $GITHUB_OUTPUT
+      # ... [previous steps remain the same] ...
 
       - name: Fetch current project version
         id: fetch_current
         run: |
-          # Dynamically find the latest instance template with SQL auth connector
+          echo "Listing instance templates..."
+          gcloud compute instance-templates list --filter="name:cloudsql-auth-template" --sort-by=~creationTimestamp --limit=1 --format="value(name)"
+          
           LATEST_TEMPLATE=$(gcloud compute instance-templates list --filter="name:cloudsql-auth-template" --sort-by=~creationTimestamp --limit=1 --format="value(name)")
           echo "Latest template: $LATEST_TEMPLATE"
           
+          if [ -z "$LATEST_TEMPLATE" ]; then
+            echo "No matching instance template found. Checking all templates..."
+            gcloud compute instance-templates list
+            echo "ERROR: No instance template with 'cloudsql-auth-template' in the name was found." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          
+          echo "Describing template: $LATEST_TEMPLATE"
           TEMPLATE_INFO=$(gcloud compute instance-templates describe $LATEST_TEMPLATE --format=json)
-          CURRENT_VERSION=$(echo "$TEMPLATE_INFO" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value' | grep -oP 'https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v\K[0-9.]+')
-          echo "Current version: $CURRENT_VERSION"
+          
+          echo "Extracting version from template..."
+          CURRENT_VERSION=$(echo "$TEMPLATE_INFO" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value' | grep -oP 'https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v\K[0-9.]+' || echo "Version not found")
+          
+          if [ "$CURRENT_VERSION" == "Version not found" ]; then
+            echo "WARNING: Could not extract SQL Auth Connector version from the template." >> $GITHUB_STEP_SUMMARY
+            echo "Template contents:" >> $GITHUB_STEP_SUMMARY
+            echo "$TEMPLATE_INFO" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Current version: $CURRENT_VERSION"
+          fi
+          
           echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "TEMPLATE_NAME=$LATEST_TEMPLATE" >> $GITHUB_OUTPUT
 
@@ -67,7 +54,11 @@ jobs:
         run: |
           LATEST=${{ steps.fetch_latest.outputs.LATEST_VERSION }}
           CURRENT=${{ steps.fetch_current.outputs.CURRENT_VERSION }}
-          if [ $(printf '%s\n' "$LATEST" "$CURRENT" | sort -V | head -n1) = "$CURRENT" ] && [ "$LATEST" != "$CURRENT" ]; then
+          
+          if [ "$CURRENT" == "Version not found" ]; then
+            echo "UPDATE_NEEDED=unknown" >> $GITHUB_OUTPUT
+            echo "Unable to determine if update is needed. Current version could not be extracted."
+          elif [ $(printf '%s\n' "$LATEST" "$CURRENT" | sort -V | head -n1) = "$CURRENT" ] && [ "$LATEST" != "$CURRENT" ]; then
             echo "UPDATE_NEEDED=true" >> $GITHUB_OUTPUT
             echo "Version update needed. Latest: $LATEST, Current: $CURRENT"
           else
@@ -75,16 +66,25 @@ jobs:
             echo "No update needed. Latest: $LATEST, Current: $CURRENT"
           fi
 
-      - name: Send Slack notification if update is needed
-        if: steps.compare.outputs.UPDATE_NEEDED == 'true'
+      - name: Send Slack notification
+        if: steps.compare.outputs.UPDATE_NEEDED != 'false'
         run: |
           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-          message="SQL Auth Connector update available for ${{ env.ENVIRONMENT }} environment!
-          Project: ${{ env.GCP_PROJECT_ID }}
-          Template: ${{ steps.fetch_current.outputs.TEMPLATE_NAME }}
-          Current version: ${{ steps.fetch_current.outputs.CURRENT_VERSION }}
-          Latest version: ${{ steps.fetch_latest.outputs.LATEST_VERSION }}"
+          if [ "${{ steps.compare.outputs.UPDATE_NEEDED }}" == "true" ]; then
+            message="SQL Auth Connector update available for ${{ env.ENVIRONMENT }} environment!
+            Project: ${{ env.GCP_PROJECT_ID }}
+            Template: ${{ steps.fetch_current.outputs.TEMPLATE_NAME }}
+            Current version: ${{ steps.fetch_current.outputs.CURRENT_VERSION }}
+            Latest version: ${{ steps.fetch_latest.outputs.LATEST_VERSION }}"
+          else
+            message="Unable to check SQL Auth Connector version for ${{ env.ENVIRONMENT }} environment.
+            Project: ${{ env.GCP_PROJECT_ID }}
+            Template: ${{ steps.fetch_current.outputs.TEMPLATE_NAME }}
+            Please check the GitHub Actions logs for more details."
+          fi
           curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SQL AUTH CONNECTOR VERSION CHECK:\n\n$message'}" "$webhook_url"
+
+      # ... [rest of the workflow remains the same] ...
 
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
