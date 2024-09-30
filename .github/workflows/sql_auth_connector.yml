@@ -122,16 +122,26 @@ jobs:
           fi
 
 
-
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
         run: |
           latest_version=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r '.tag_name')
-          # Extract the n-1 version from the latest version
-          n_minus_1_version=$(echo $latest_version | awk -F. '{$NF--; print $0}' OFS=.)
+          
+          # Split the version into major, minor, and patch
+          IFS='.' read -r major minor patch <<< "$(echo $latest_version | sed 's/v//')"
+      
+          # Decrement the minor version properly, ensuring it doesn't go negative
+          if [ "$minor" -gt 0 ]; then
+            n_minus_1_version="v${major}.$((minor - 1)).0"
+          else
+            # If minor version is 0, we need to handle the rollback (e.g., from 2.0.0 to 1.x.x)
+            n_minus_1_version="v$((major - 1)).X.X"
+          fi
+      
           echo "Latest Cloud SQL Auth Proxy version: $latest_version"
           echo "N-1 version: $n_minus_1_version"
           echo "N_MINUS_1_VERSION=$n_minus_1_version" >> $GITHUB_ENV
+
 
       - name: Compare versions and send Slack alerts if updates are needed
         run: |
