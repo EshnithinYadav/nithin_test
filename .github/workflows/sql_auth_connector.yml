@@ -52,16 +52,35 @@ jobs:
               local instance_name=$1
               local zone=$2
 
+              echo "Fetching SQL Auth Proxy version for instance: $instance_name in zone: $zone"
+
               # Extract the startup-script metadata which contains the Cloud SQL Auth Proxy version
-              sql_proxy_version=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" | grep -oP 'v\d+\.\d+\.\d+')
+              sql_proxy_metadata=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" 2>&1)
+
+              # Check if the gcloud command failed
+              if [ $? -ne 0 ]; then
+                  echo "Error: Failed to fetch metadata for instance $instance_name in zone $zone"
+                  echo "gcloud output: $sql_proxy_metadata"
+                  return 1  # Exit the function with an error code
+              fi
+
+              # Check if metadata is empty
+              if [ -z "$sql_proxy_metadata" ]; then
+                  echo "Warning: No startup-script metadata found for instance $instance_name in $zone. Skipping."
+                  return 0  # Continue even if this instance doesn't have the metadata
+              fi
+
+              # Extract Cloud SQL Proxy version using regex
+              sql_proxy_version=$(echo "$sql_proxy_metadata" | grep -oP 'v\d+\.\d+\.\d+')
 
               if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: No Cloud SQL Auth Proxy version found for instance $instance_name in $zone. Skipping."
-                  return 0  # Continue even if this instance doesn't have a proxy version
+                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from metadata for instance $instance_name in $zone. Skipping."
+                  return 0
               fi
 
               echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
               echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
+              return 0
           }
 
           # Fetch the instance names and zones dynamically for cloud-sql-connect and sql-proxy
@@ -101,6 +120,7 @@ jobs:
               echo "Warning: No SQL Auth Proxy versions were found for any instances."
               echo "[]" > sql_auth_proxy_versions.json  # Create an empty JSON array
           fi
+
 
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
