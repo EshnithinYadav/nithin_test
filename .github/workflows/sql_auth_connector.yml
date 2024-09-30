@@ -61,6 +61,9 @@ jobs:
 
               echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
               echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
+              cat sql_auth_proxy_versions.txt
+              echo sql_auth_proxy_versions.txt
+              
           }
 
           # Fetch the instance names and zones dynamically for cloud-sql-connect and sql-proxy
