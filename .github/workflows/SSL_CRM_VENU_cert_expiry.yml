@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        env: [stage, prod]  # Added test and dev
+        env: [stage, prod, test, dev]  # Added test and dev
 
     steps:
       - name: Checkout repository
@@ -25,49 +25,16 @@ jobs:
 
       - name: Set environment variables
         run: |
-          if [ "${{ matrix.env }}" == "dev" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_DEV }}" | base64 | tr -d '\n' >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_DEV }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_DEV }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "test" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_TEST }}" | base64 | tr -d '\n' >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_TEST }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_TEST }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}" | base64 | tr -d '\n' >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}" | base64 | tr -d '\n' >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
-          fi
+          echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets['GCP_SA_KEY_' + matrix.env | upper] }}" >> $GITHUB_ENV
+          echo "GCP_PROJECT_ID=${{ secrets['GCP_PROJECT_ID_' + matrix.env | upper] }}" >> $GITHUB_ENV
+          echo "SLACK_WEBHOOK_URL=${{ secrets['SLACK_WEBHOOK_URL_' + matrix.env | upper] }}" >> $GITHUB_ENV
           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
 
       - name: Authenticate to Google Cloud
         run: |
-          # Check if the service account key is valid JSON or base64 encoded
-          if echo "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" | jq empty > /dev/null 2>&1; then
-            # If it's valid JSON, write it directly to the key file
-            echo "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" > $HOME/gcp-key.json
-          else
-            # If it's not valid JSON, assume it's base64 encoded and decode it
-            echo "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
-          fi
-
-          # Check if the key file was created successfully and is not empty
-          if [[ ! -s $HOME/gcp-key.json ]]; then
-            echo "Failed to create a valid service account key file."
-            exit 1
-          fi
-
-          # Authenticate to Google Cloud using the decoded or raw service account key
+          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-          
-          # Set the GCP project ID
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
-
-
 
       - name: Install gke-gcloud-auth-plugin
         run: |
