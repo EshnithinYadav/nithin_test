@@ -3,8 +3,8 @@ name: SSL_CERT_EXPIRY
 on:
   workflow_dispatch:
   # Uncomment the below line to schedule the workflow to run every Monday at 1:30 PM UTC (7:00 PM IST)
-  # schedule:
-  #   - cron: '30 13 * * 1'
+  schedule:
+    - cron: '30 13 * * 1'
 
 jobs:
   check_ssl_expiry:
