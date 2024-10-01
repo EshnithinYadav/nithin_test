@@ -46,14 +46,23 @@ jobs:
 
       - name: Authenticate to Google Cloud
         run: |
-          # Attempt to decode the service account key if needed
-          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json 2>/dev/null || echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" > $HOME/gcp-key.json
-          
+          # First, attempt to decode the service account key.
+          # Check if it's already in JSON format by attempting to parse it.
+          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | jq empty > /dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            # If it's valid JSON, write it directly to the key file
+            echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" > $HOME/gcp-key.json
+          else
+            # If not valid JSON, assume it's base64 encoded and decode it
+            echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
+          fi
+
           # Authenticate to Google Cloud using the decoded or raw service account key
           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
           
           # Set the GCP project ID
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
+
 
       - name: Install gke-gcloud-auth-plugin
         run: |
