@@ -43,10 +43,12 @@ jobs:
       - name: Install gke-gcloud-auth-plugin
         run: |
           gcloud components install gke-gcloud-auth-plugin
+
       - name: Authenticate kubectl
         run: |
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
           gcloud container clusters get-credentials ${{ env.K8S_CLUSTER_NAME }} --zone=${{ env.K8S_ZONE }} --project=${{ env.GCP_PROJECT_ID }}
+
       - name: Check GCP Gateway Certificate Expiry
         run: |
           certificate_name="${{ env.GCP_GATEWAY_CERTIFICATE_NAME }}"
