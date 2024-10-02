@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [stage, prod]
+        environment: [stage]
     env:
       EXPIRY_THRESHOLD_DAYS: 30  # Set the expiry threshold to 30 days
     steps:
