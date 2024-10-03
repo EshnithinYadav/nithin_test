@@ -46,34 +46,41 @@ jobs:
         run: |
           fetch_sql_auth_proxy_version() {
               local template_name=$1
-
+          
               echo "Fetching SQL Auth Proxy version for template: $template_name"
-
+          
               # Fetch metadata as JSON
               template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
-
+          
+              # Check if the command was successful
               if [ $? -ne 0 ]; then
                   echo "Error: Failed to fetch metadata for template $template_name"
                   echo "gcloud output: $template_metadata"
                   return 1
               fi
-
-              # Extract the startup script
+          
+              # Extract the startup script using jq
               sql_proxy_metadata=$(echo "$template_metadata" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value')
-
+          
+              # Check if the startup script was fetched successfully
+              if [ $? -ne 0 ]; then
+                  echo "Error: Failed to parse JSON for template $template_name"
+                  return 1
+              fi
+          
               if [ -z "$sql_proxy_metadata" ]; then
                   echo "Warning: No startup-script metadata found for template $template_name. Skipping."
                   return 0
               fi
-
+          
               # Extract SQL Auth Proxy version from the startup script
               sql_proxy_version=$(echo "$sql_proxy_metadata" | grep -oP 'v\d+\.\d+\.\d+')
-
+          
               if [ -z "$sql_proxy_version" ]; then
                   echo "Warning: Could not extract Cloud SQL Auth Proxy version from metadata for template $template_name. Skipping."
                   return 0
               fi
-
+          
               echo "Template $template_name is using Cloud SQL Auth Proxy version $sql_proxy_version."
               echo "$template_name,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
