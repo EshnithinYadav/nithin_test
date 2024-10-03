@@ -44,12 +44,12 @@ jobs:
             project_id="${{ secrets.GCP_PROJECT_ID_TEST }}"
             slack_url="${{ secrets.SLACK_WEBHOOK_URL_TEST }}"
           elif [ "${{ matrix.env }}" == "stage" ]; then
-            sa_key="${{ secrets.GCP_SA_KEY_STAGE }}"
+            sa_key="${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}"
             project_id="${{ secrets.GCP_PROJECT_ID_STAGE }}"
             slack_url="${{ secrets.SLACK_WEBHOOK_URL_STAGE }}"
           elif [ "${{ matrix.env }}" == "prod" ]; then
             sa_key="${{ secrets.GCP_SA_KEY_PROD }}"
-            project_id="${{ secrets.GCP_PROJECT_ID_PROD }}"
+            project_id="${{ secrets.GCP_PROJECT_ID_PROD_PLAIN }}"
             slack_url="${{ secrets.SLACK_WEBHOOK_URL_PROD }}"
           fi
       
