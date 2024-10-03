@@ -50,7 +50,7 @@ jobs:
               echo "Fetching SQL Auth Proxy version for template: $template_name"
           
               template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
-              cat template_metadata
+              echo template_metadata
           
               if [ $? -ne 0 ]; then
                   echo "Error: Failed to fetch metadata for template $template_name"
@@ -59,7 +59,7 @@ jobs:
               fi
           
               startup_script=$(echo "$template_metadata" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value')
-              cat startup_script
+              echo startup_script
           
               if [ -z "$startup_script" ]; then
                   echo "Warning: No startup-script metadata found for template $template_name. Skipping."
@@ -80,7 +80,7 @@ jobs:
           
           # Fetch all instance templates matching the criteria
           templates=$(gcloud compute instance-templates list --filter="name:cloud-sql-auth-template-*" --format="value(name)")
-          cat templates
+          echo templates
           
           if [ -z "$templates" ]; then
               echo "Warning: No instance templates found matching the criteria."
