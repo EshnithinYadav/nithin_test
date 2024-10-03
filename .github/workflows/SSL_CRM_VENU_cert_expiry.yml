@@ -31,7 +31,7 @@ jobs:
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "K8S_CLUSTER_NAME=venu-stage-k8s-01" >> $GITHUB_ENV
             echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
-          elif [[ "${{ matrix.environment }}" == "prod" ]]; then
+          elif [[ "${{ matrix.env }}" == "prod" ]]; then
             echo "Setting environment variables for prod..."
             echo "GCP_GATEWAY_CERTIFICATE_NAME=gateway-certs" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
@@ -40,6 +40,7 @@ jobs:
             echo "K8S_ZONE=us-east4" >> $GITHUB_ENV
           fi
           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
+
 
       - name: Google Auth
         id: auth
@@ -57,10 +58,15 @@ jobs:
 
       - name: Authenticate to Google Cloud
         run: |
-          # Write the plain JSON service account key to a file
-          # echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" > $HOME/gcp-key.json
-          # gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-          gcloud config set project ${{ env.GCP_PROJECT_ID }}
+          # Verify the GCP project ID is set
+          if [ -z "${{ env.GCP_PROJECT_ID }}" ]; then
+            echo "GCP_PROJECT_ID is not set. Please check the environment variable."
+            exit 1
+          fi
+
+          # Set the GCP project for gcloud
+          gcloud config set project "${{ env.GCP_PROJECT_ID }}"
+
 
       # - name: Install gke-gcloud-auth-plugin
       #   run: |
