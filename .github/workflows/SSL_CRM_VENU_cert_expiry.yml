@@ -37,13 +37,6 @@ jobs:
           fi
           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
 
-
-      - name: Google Auth
-        id: auth
-        uses: 'google-github-actions/auth@v2'
-        with:
-          credentials_json: ${{ matrix.env == 'stage' && secrets.GCP_SA_KEY_STAGE_PLAIN || secrets.GCP_SA_KEY_PROD_PLAIN }}
-
       - name: Setting up Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
         with:
