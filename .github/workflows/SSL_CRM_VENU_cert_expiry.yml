@@ -25,23 +25,45 @@ jobs:
 
       - name: Set environment variables
         run: |
+          # Function to check if a string is base64 encoded
+          is_base64() {
+            if [[ "$1" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]; then
+              echo true
+            else
+              echo false
+            fi
+          }
+      
+          # Choose service account key and project ID based on environment
           if [ "${{ matrix.env }}" == "dev" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_DEV }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_DEV }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_DEV }}" >> $GITHUB_ENV
+            sa_key="${{ secrets.GCP_SERVICE_ACCOUNT_KEY_DEV }}"
+            project_id="${{ secrets.GCP_PROJECT_ID_DEV }}"
+            slack_url="${{ secrets.SLACK_WEBHOOK_URL_DEV }}"
           elif [ "${{ matrix.env }}" == "test" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_TEST }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_TEST }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_TEST }}" >> $GITHUB_ENV
+            sa_key="${{ secrets.GCP_SERVICE_ACCOUNT_KEY_TEST }}"
+            project_id="${{ secrets.GCP_PROJECT_ID_TEST }}"
+            slack_url="${{ secrets.SLACK_WEBHOOK_URL_TEST }}"
           elif [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
+            sa_key="${{ secrets.GCP_SA_KEY_STAGE }}"
+            project_id="${{ secrets.GCP_PROJECT_ID_STAGE }}"
+            slack_url="${{ secrets.SLACK_WEBHOOK_URL_STAGE }}"
           elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD_PLAIN }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
+            sa_key="${{ secrets.GCP_SA_KEY_PROD }}"
+            project_id="${{ secrets.GCP_PROJECT_ID_PROD }}"
+            slack_url="${{ secrets.SLACK_WEBHOOK_URL_PROD }}"
           fi
+      
+          # Check if service account key is already base64-encoded
+          if [ "$(is_base64 "$sa_key")" == "true" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=$sa_key" >> $GITHUB_ENV
+          else
+            # If not, base64 encode it
+            echo "GCP_SERVICE_ACCOUNT_KEY=$(echo "$sa_key" | base64)" >> $GITHUB_ENV
+          fi
+      
+          # Export other environment variables
+          echo "GCP_PROJECT_ID=$project_id" >> $GITHUB_ENV
+          echo "SLACK_WEBHOOK_URL=$slack_url" >> $GITHUB_ENV
           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
 
       - name: Authenticate to Google Cloud (with base64 check)
