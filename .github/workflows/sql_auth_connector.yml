@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [stage]
+        env: [stage, prod]
 
     steps:
       - name: Checkout repository
