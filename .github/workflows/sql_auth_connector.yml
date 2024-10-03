@@ -1,14 +1,18 @@
-name: GCP Cloud SQL Auth Proxy Version Check and Send Slack Alerts
+name: CLOUD_SQL_VERSION_CHECK
 
 on:
   workflow_dispatch:
+  # Uncomment the below line to schedule the workflow to run every Monday at 1:30 PM UTC (7:00 PM IST)
+  # schedule:
+  #   - cron: '30 13 * * 1'
 
 jobs:
-  GCP_SQL_Auth_Proxy_Version_Check:
+  check_cloud_sql_version:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
-        env: [stage]
+        env: [stage, prod]  # Define the environments
 
     steps:
       - name: Checkout repository
@@ -30,6 +34,7 @@ jobs:
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
+          echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
 
       - name: Authenticate to Google Cloud
         run: |
@@ -37,137 +42,95 @@ jobs:
           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
 
-      - name: Capitalize the environment name
-        run: |
-          environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
-          echo "environment=${environment}" >> $GITHUB_ENV
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
-      - name: Fetch Cloud SQL Auth Proxy version from instance templates
+      - name: Install dependencies
         run: |
-          fetch_sql_auth_proxy_version() {
-              local template_name=$1
-          
-              echo "Fetching SQL Auth Proxy version for template: $template_name"
-          
-              # Fetch metadata as JSON
-              template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
-          
-              # Check if the command was successful
-              if [ $? -ne 0 ]; then
-                  echo "Error: Failed to fetch metadata for template $template_name"
-                  echo "gcloud output: $template_metadata"
-                  return 1
-              fi
-          
-              # Extract the startup script using jq
-              sql_proxy_metadata=$(echo "$template_metadata" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value')
-          
-              # Check if the startup script was fetched successfully
-              if [ $? -ne 0 ]; then
-                  echo "Error: Failed to parse JSON for template $template_name"
-                  return 1
-              fi
-          
-              if [ -z "$sql_proxy_metadata" ]; then
-                  echo "Warning: No startup-script metadata found for template $template_name. Skipping."
-                  return 0
-              fi
-          
-              # Extract SQL Auth Proxy version from the startup script
-              sql_proxy_version=$(echo "$sql_proxy_metadata" | grep -oP 'v\d+\.\d+\.\d+')
-          
-              if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from metadata for template $template_name. Skipping."
-                  return 0
-              fi
-          
-              echo "Template $template_name is using Cloud SQL Auth Proxy version $sql_proxy_version."
-              echo "$template_name,$sql_proxy_version" >> sql_auth_proxy_versions.txt
-              return 0
+          pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+
+      - name: Fetch Cloud SQL Auth Connector and Proxy versions
+        id: fetch_versions
+        run: |
+          python - <<EOF
+          import googleapiclient.discovery
+          from google.oauth2 import service_account
+          import json
+          import os
+
+          credentials = service_account.Credentials.from_service_account_file(
+              '$HOME/gcp-key.json',
+              scopes=['https://www.googleapis.com/auth/compute.readonly']
+          )
+          compute = googleapiclient.discovery.build('compute', 'v1', credentials=credentials)
+
+          templates = compute.instanceTemplates().list(project=os.environ['GCP_PROJECT_ID']).execute()
+
+          connector_version = None
+          proxy_version = None
+          for template in templates['items']:
+              metadata = template['properties'].get('metadata', {}).get('items', [])
+              for item in metadata:
+                  if item['key'] == 'startup-script':
+                      script = item['value']
+                      if 'cloud_sql_proxy-' in script:
+                          connector_version = script.split('cloud_sql_proxy-')[1].split('-linux')[0]
+                      if 'cloud-sql-proxy.' in script:
+                          proxy_version = script.split('cloud-sql-proxy.')[1].split('.tar')[0]
+
+          print(f"::set-output name=connector_version::{connector_version}")
+          print(f"::set-output name=proxy_version::{proxy_version}")
+          EOF
+
+      - name: Fetch latest Cloud SQL Auth Connector release
+        id: latest_release
+        run: |
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r .tag_name)
+          echo "::set-output name=version::${LATEST_RELEASE#v}"
+
+      - name: Compare versions
+        id: compare_versions
+        run: |
+          CURRENT_CONNECTOR_VERSION="${{ steps.fetch_versions.outputs.connector_version }}"
+          CURRENT_PROXY_VERSION="${{ steps.fetch_versions.outputs.proxy_version }}"
+          LATEST_VERSION="${{ steps.latest_release.outputs.version }}"
+
+          version_lt() {
+            test "$(echo "$@" | tr " " "\n" | sort -rV | head -n 1)" != "$1";
           }
 
-          # List instance templates matching the criteria
-          templates=$(gcloud compute instance-templates list --format="csv[no-heading](name)" | grep -E 'cloud-sql-auth-template|cloud-sql-connect')
+          IFS='.' read -ra VERSION_PARTS <<< "$LATEST_VERSION"
+          N_MINUS_ONE_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$((VERSION_PARTS[2] - 1))"
 
-          if [ -z "$templates" ]; then
-              echo "Warning: No templates found matching the criteria."
-              echo "[]" > sql_auth_proxy_versions.json
-              exit 0
-          fi
+          echo "Cloud SQL versions in ${{ env.ENVIRONMENT }} ENV:" > version_message.txt
+          echo "Current Connector Version: $CURRENT_CONNECTOR_VERSION" >> version_message.txt
+          echo "Current Proxy Version: $CURRENT_PROXY_VERSION" >> version_message.txt
+          echo "Latest N-1 Version: $N_MINUS_ONE_VERSION" >> version_message.txt
 
-          echo "[" > sql_auth_proxy_versions.json
-
-          while IFS= read -r template_name; do
-              echo "Processing template: $template_name"
-              fetch_sql_auth_proxy_version "$template_name"
-              
-              if [ $? -eq 0 ] && [ -f sql_auth_proxy_versions.txt ]; then
-                  version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f2)
-                  echo "  {\"template\": \"$template_name\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
-              else
-                  echo "Skipping template $template_name due to errors or missing version."
-              fi
-          done <<< "$templates"
-
-          sed -i '$ s/,$//' sql_auth_proxy_versions.json
-          echo "]" >> sql_auth_proxy_versions.json
-
-          if [ -f sql_auth_proxy_versions.json ]; then
-              echo "SQL Auth Proxy versions were successfully fetched and saved."
-              cat sql_auth_proxy_versions.json
+          if version_lt "$CURRENT_CONNECTOR_VERSION" "$N_MINUS_ONE_VERSION"; then
+            echo "update_needed=true" >> $GITHUB_ENV
+            echo "Cloud SQL Auth Connector needs update." >> version_message.txt
+          elif version_lt "$CURRENT_PROXY_VERSION" "$N_MINUS_ONE_VERSION"; then
+            echo "update_needed=true" >> $GITHUB_ENV
+            echo "SQL Auth Proxy needs update." >> version_message.txt
           else
-              echo "Warning: No SQL Auth Proxy versions were found for any templates."
-              echo "[]" > sql_auth_proxy_versions.json
+            echo "Both versions are up to date." >> version_message.txt
           fi
 
-      - name: Fetch the latest Cloud SQL Auth Proxy version
-        id: get_latest_version
+          cat version_message.txt > VERSION_MESSAGE.txt
+
+      - name: Send Slack Alert if update is needed
+        if: env.update_needed == 'true'
         run: |
-          latest_version=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r '.tag_name')
-          IFS='.' read -r major minor patch <<< "$(echo $latest_version | sed 's/v//')"
-
-          if [ "$minor" -gt 0 ]; then
-            n_minus_1_version="v${major}.$((minor - 1)).0"
-          else
-            n_minus_1_version="v$((major - 1)).X.X"
-          fi
-
-          echo "Latest Cloud SQL Auth Proxy version: $latest_version"
-          echo "N-1 version: $n_minus_1_version"
-          echo "N_MINUS_1_VERSION=$n_minus_1_version" >> $GITHUB_ENV
-
-      - name: Compare versions and send consolidated Slack alerts
-        run: |
-          n_minus_1_version="${{ env.N_MINUS_1_VERSION }}"
-          versions=$(cat sql_auth_proxy_versions.json)
-          message="Upgrade is available:\n"
-          update_needed=false
-
-          for row in $(echo "${versions}" | jq -r '.[] | @base64'); do
-              _jq() {
-                  echo ${row} | base64 --decode | jq -r ${1}
-              }
-
-              template=$(_jq '.template')
-              current_version=$(_jq '.version')
-
-              if [ "$current_version" != "$n_minus_1_version" ]; then
-                  update_needed=true
-                  message="${message}- Template: $template\n  Current version: $current_version\n  N-1 version: $n_minus_1_version\n\n"
-              else
-                  echo "Template $template is using the N-1 version."
-              fi
-          done
-
-          if [ "$update_needed" = true ]; then
-              echo "Sending consolidated Slack message"
-              curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}' }" "${{ env.SLACK_WEBHOOK_URL }}"
-          else
-              echo "All templates are up to date."
-          fi
+          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+          message_content=$(cat VERSION_MESSAGE.txt)
+          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'CLOUD SQL VERSION CHECK:\n\n$message_content'}" "$webhook_url"
 
       - name: Send alert to Slack on job failure
-        if: ${{ failure() }}
+        if: failure()
         run: |
-          message="The workflow for Cloud SQL Auth Proxy version check failed in the ${{ env.environment }} environment."
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'GCP_SQL_AUTH_PROXY_VERSION_CHECK:\n\n$message'}" "${{ env.SLACK_WEBHOOK_URL }}"
+          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+          message="The Cloud SQL version check JOB failed for ${{ env.ENVIRONMENT }} environment."
+          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'CLOUD SQL VERSION CHECK:\n\n$message'}" "$webhook_url"
