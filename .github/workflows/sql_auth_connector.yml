@@ -1,35 +1,31 @@
-name: CLOUD_SQL_VERSION_CHECK
+name: SQL_AUTH_CONNECTOR_VERSION_CHECK
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '30 13 * * 1'  # Run every Monday at 1:30 PM UTC
+    - cron: '0 12 * * 1'  # Run every Monday at 12:00 PM UTC
+
+  workflow_dispatch:  # Allows manually triggering the workflow
 
 jobs:
-  check_cloud_sql_version:
+  check_sql_auth_version:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        env: [stage, prod]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          version: 'latest'
-
       - name: Set environment variables
         run: |
-          if [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE }}" >> $GITHUB_ENV
+          if [ "${{ matrix.env }}" == "dev" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_DEV }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_DEV }}" >> $GITHUB_ENV
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_DEV }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.env }}" == "stage" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_STAGE }}" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD }}" >> $GITHUB_ENV
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_PROD }}" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
@@ -41,109 +37,51 @@ jobs:
           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
+      - name: Fetch Latest SQL Auth Proxy Version from GitHub
         run: |
-          pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+          latest_version=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r '.tag_name')
+          echo "Latest SQL Auth Proxy version: $latest_version"
+          echo "LATEST_SQL_AUTH_VERSION=$latest_version" >> $GITHUB_ENV
 
-      - name: Fetch Cloud SQL Auth Connector and Proxy versions
-        id: fetch_versions
+      - name: Get Current Project Version from Instance Template
         run: |
-          python - <<EOF
-          import googleapiclient.discovery
-          from google.oauth2 import service_account
-          import json
-          import os
+          instance_template=$(gcloud compute instance-templates describe cloudsql-auth-template-20240820-latest-newtemplate-20240923 --format="json")
+          current_version=$(echo "$instance_template" | jq -r '.properties.metadata.items[] | select(.key == "sql-auth-proxy-version").value')
+          echo "Current project version: $current_version"
+          echo "CURRENT_PROJECT_VERSION=$current_version" >> $GITHUB_ENV
 
-          credentials = service_account.Credentials.from_service_account_file(
-              '$HOME/gcp-key.json',
-              scopes=['https://www.googleapis.com/auth/compute.readonly']
-          )
-          compute = googleapiclient.discovery.build('compute', 'v1', credentials=credentials)
-
-          templates = compute.instanceTemplates().list(project=os.environ['GCP_PROJECT_ID']).execute()
-
-          connector_version = None
-          proxy_version = None
-          for template in templates['items']:
-              metadata = template['properties'].get('metadata', {}).get('items', [])
-              for item in metadata:
-                  if item['key'] == 'startup-script':
-                      script = item['value']
-                      print(f"Analyzing startup script: {script[:100]}...")  # Print first 100 chars for debugging
-                      if 'cloud_sql_proxy-' in script:
-                          connector_version = script.split('cloud_sql_proxy-')[1].split('-linux')[0]
-                          print(f"Found connector version: {connector_version}")
-                      if 'cloud-sql-proxy.' in script:
-                          proxy_version = script.split('cloud-sql-proxy.')[1].split('.tar')[0]
-                          print(f"Found proxy version: {proxy_version}")
-
-          print(f"connector_version={connector_version}")
-          print(f"proxy_version={proxy_version}")
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-              print(f"connector_version={connector_version}", file=fh)
-              print(f"proxy_version={proxy_version}", file=fh)
-          EOF
-
-      - name: Fetch latest Cloud SQL Auth Connector release
-        id: latest_release
+      - name: Compare Versions and Check n-1 Strategy
         run: |
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r .tag_name)
-          echo "version=${LATEST_RELEASE#v}" >> $GITHUB_OUTPUT
-          echo "Latest release: ${LATEST_RELEASE#v}"
+          # Remove 'v' prefix from the versions
+          latest_version="${{ env.LATEST_SQL_AUTH_VERSION#v }}"
+          current_version="${{ env.CURRENT_PROJECT_VERSION#v }}"
 
-      - name: Compare versions
-        id: compare_versions
-        run: |
-          CURRENT_CONNECTOR_VERSION="${{ steps.fetch_versions.outputs.connector_version }}"
-          CURRENT_PROXY_VERSION="${{ steps.fetch_versions.outputs.proxy_version }}"
-          LATEST_VERSION="${{ steps.latest_release.outputs.version }}"
+          # Extract major, minor, and patch components
+          latest_major=$(echo $latest_version | cut -d. -f1)
+          latest_minor=$(echo $latest_version | cut -d. -f2)
+          current_major=$(echo $current_version | cut -d. -f1)
+          current_minor=$(echo $current_version | cut -d. -f2)
 
-          echo "Current Connector Version: $CURRENT_CONNECTOR_VERSION"
-          echo "Current Proxy Version: $CURRENT_PROXY_VERSION"
-          echo "Latest Version: $LATEST_VERSION"
+          # Check n-1 condition (if current version is below latest - 1)
+          n_minus_one_minor=$((latest_minor - 1))
 
-          version_lt() {
-            test "$(echo "$@" | tr " " "\n" | sort -rV | head -n 1)" != "$1";
-          }
-
-          IFS='.' read -ra VERSION_PARTS <<< "$LATEST_VERSION"
-          N_MINUS_ONE_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$((VERSION_PARTS[2] - 1))"
-
-          echo "Cloud SQL versions in ${{ env.ENVIRONMENT }} ENV:" > version_message.txt
-          echo "Current Connector Version: $CURRENT_CONNECTOR_VERSION" >> version_message.txt
-          echo "Current Proxy Version: $CURRENT_PROXY_VERSION" >> version_message.txt
-          echo "Latest N-1 Version: $N_MINUS_ONE_VERSION" >> version_message.txt
-
-          update_needed=false
-          if [ -z "$CURRENT_CONNECTOR_VERSION" ] || [ -z "$CURRENT_PROXY_VERSION" ]; then
-            echo "update_needed=true" >> $GITHUB_ENV
-            echo "Unable to detect current versions. Manual check required." >> version_message.txt
-          elif version_lt "$CURRENT_CONNECTOR_VERSION" "$N_MINUS_ONE_VERSION"; then
-            echo "update_needed=true" >> $GITHUB_ENV
-            echo "Cloud SQL Auth Connector needs update." >> version_message.txt
-          elif version_lt "$CURRENT_PROXY_VERSION" "$N_MINUS_ONE_VERSION"; then
-            echo "update_needed=true" >> $GITHUB_ENV
-            echo "SQL Auth Proxy needs update." >> version_message.txt
+          if [ "$current_major" -lt "$latest_major" ] || [ "$current_minor" -lt "$n_minus_one_minor" ]; then
+            echo "A new version (n-1) is available for upgrade."
+            echo "ALERT_NEEDED=true" >> $GITHUB_ENV
           else
-            echo "Both versions are up to date." >> version_message.txt
+            echo "No upgrade is required."
           fi
 
-          cat version_message.txt
-          cat version_message.txt > VERSION_MESSAGE.txt
-
-      - name: Send Slack Alert
-        if: env.update_needed == 'true' || failure()
+      - name: Send Slack Alert for Available Upgrade
+        if: ${{ env.ALERT_NEEDED == 'true' }}
         run: |
           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-          if [ "${{ failure() }}" == "true" ]; then
-            message="The Cloud SQL version check JOB failed for ${{ env.ENVIRONMENT }} environment."
-          else
-            message_content=$(cat VERSION_MESSAGE.txt)
-            message="CLOUD SQL VERSION CHECK:\n\n$message_content"
-          fi
-          curl -X POST -H 'Content-type: application/json' --data "{ \"text\": \"$message\"}" "$webhook_url"
+          message="A new version of Cloud SQL Auth Proxy is available for the ${{ env.ENVIRONMENT }} environment. The current version is ${{ env.CURRENT_PROJECT_VERSION }} and the latest version is ${{ env.LATEST_SQL_AUTH_VERSION }}."
+          curl -X POST -H 'Content-type: application/json' --data "{ 'text': '$message'}" "$webhook_url"
+
+      - name: Send Slack Alert on Workflow Failure
+        if: ${{ failure() }}
+        run: |
+          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+          message="The SQL Auth Connector version check job failed for ${{ env.ENVIRONMENT }} environment."
+          curl -X POST -H 'Content-type: application/json' --data "{ 'text': '$message'}" "$webhook_url"
