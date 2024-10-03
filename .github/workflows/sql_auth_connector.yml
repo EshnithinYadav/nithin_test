@@ -128,7 +128,7 @@ jobs:
         run: |
           n_minus_1_version="${{ env.N_MINUS_1_VERSION }}"
           versions=$(cat sql_auth_proxy_versions.json)
-          message="GCP_SQL_AUTH_PROXY_VERSION_CHECK:\n\n"
+          message="Upgrade is available:\n"
           update_needed=false
 
           for row in $(echo "${versions}" | jq -r '.[] | @base64'); do
@@ -142,7 +142,7 @@ jobs:
 
               if [ "$current_version" != "$n_minus_1_version" ];then
                   update_needed=true
-                  message="${message}Instance: $instance in $zone is using an outdated Cloud SQL Auth Proxy version ($current_version). N-1 version is $n_minus_1_version.\n"
+                  message="${message}- Instance: $instance\n  Current version: $current_version\n  N-1 version: $n_minus_1_version\n\n"
               else
                   echo "Instance $instance in $zone is using the N-1 version."
               fi
@@ -150,10 +150,11 @@ jobs:
 
           if [ "$update_needed" = true ]; then
               echo "Sending consolidated Slack message"
-              curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}'}" "${{ env.SLACK_WEBHOOK_URL }}"
+              curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}' }" "${{ env.SLACK_WEBHOOK_URL }}"
           else
               echo "All instances are up to date."
           fi
+
 
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
