@@ -47,6 +47,14 @@ jobs:
         with:
           credentials_json: ${{ matrix.env == 'stage' && secrets.GCP_SA_KEY_STAGE_PLAIN || secrets.GCP_SA_KEY_PROD_PLAIN }}
 
+      - name: Setting up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+      - name: Install gke-gcloud-auth-plugin
+        run: |
+          gcloud components install gke-gcloud-auth-plugin
+
       - name: Authenticate to Google Cloud
         run: |
           # Write the plain JSON service account key to a file
