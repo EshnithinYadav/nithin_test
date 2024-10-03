@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         env: [stage, prod]  # Define the environments
-# Charen moved the TEST env ingress to the Loadtesting cluster in the same ENV once Charen updates the ingress we can add the test key in the matrix
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -25,24 +25,40 @@ jobs:
 
       - name: Set environment variables
         run: |
-          if [ "${{ matrix.env }}" == "stage" ]; then
+          if [ "${{ matrix.env }}" == "dev" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_DEV }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_DEV }}" >> $GITHUB_ENV
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_DEV }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.env }}" == "test" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SERVICE_ACCOUNT_KEY_TEST }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_TEST }}" >> $GITHUB_ENV
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_TEST }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.env }}" == "stage" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE }}" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD }}" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
 
-      - name: Google Auth
-        id: auth
-        uses: 'google-github-actions/auth@v2'
-        with:
-          credentials_json: ${{ matrix.env == 'stage' && secrets.GCP_SA_KEY_STAGE_PLAIN || secrets.GCP_SA_KEY_PROD_PLAIN }} > $HOME/gcp-key.json
-        
-      - name: Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud (with base64 check)
         run: |
-          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}"  > $HOME/gcp-key.json
+          # Check if GCP_SERVICE_ACCOUNT_KEY is base64 encoded by trying to decode it
+          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > /dev/null 2>&1
+          if [ $? -ne 0 ]; then
+            # It's not base64, so encode it
+            echo "GCP_SERVICE_ACCOUNT_KEY is in plain JSON, encoding it."
+            echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 > $HOME/gcp-key.b64
+            base64 --decode $HOME/gcp-key.b64 > $HOME/gcp-key.json
+          else
+            # It's already base64, so decode it
+            echo "GCP_SERVICE_ACCOUNT_KEY is already base64 encoded."
+            echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
+          fi
+          # Authenticate using the decoded key
           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
 
@@ -52,8 +68,6 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
           curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/cloud.google.gpg > /dev/null
           sudo apt-get update && sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin
-
-
 
       - name: Get GKE cluster credentials for all clusters
         run: |
@@ -68,8 +82,6 @@ jobs:
             echo "Fetching credentials for Cluster Name: ${CLUSTER_NAME} in Zone: ${CLUSTER_ZONE}"
             gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
           done
-
-
 
       - name: Check SSL certificate expiry
         run: |
@@ -97,7 +109,6 @@ jobs:
             expiry_date=$(date -d "$(echo "$validity" | sed 's/Not After : //')" +"%s")
             current_date=$(date +"%s")
             days_remaining=$(( (expiry_date - current_date) / (60*60*24) ))
-            
 
             # Set the threshold for sending alerts
             threshold_days=500
