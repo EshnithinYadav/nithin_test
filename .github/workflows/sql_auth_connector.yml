@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [stage, prod]  # Define environments for stage and prod
+        env: [stage]  # Define environments for stage and prod
 
     steps:
       - name: Checkout repository
@@ -25,12 +25,12 @@ jobs:
       - name: Set environment variables
         run: |
           if [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_STAGE_PROJECT_ID }}" >> $GITHUB_ENV
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCLOUD_SERVICE_ACCOUNT_KEY_STAGE }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCLOUD_STAGE_PROJECT_ID }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCLOUD_SERVICE_ACCOUNT_KEY_PROD }}" >> $GITHUB_ENV
+            echo "GCP_PROJECT_ID=${{ secrets.GCLOUD_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
 
@@ -51,40 +51,37 @@ jobs:
           fetch_sql_auth_proxy_version() {
               local instance_name=$1
               local zone=$2
-          
+
               echo "Fetching SQL Auth Proxy version for instance: $instance_name in zone: $zone"
-          
-              # Extract the metadata items first to ensure startup-script exists
-              metadata_items=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items)" 2>&1)
-          
-              if [[ "$metadata_items" != *"startup-script"* ]]; then
-                  echo "Warning: No 'startup-script' found in the metadata for instance $instance_name in $zone. Skipping."
-                  return 0
-              fi
-          
-              # Now extract the startup-script metadata to get the Cloud SQL Proxy version
+
+              # Extract the startup-script metadata which contains the Cloud SQL Auth Proxy version
               sql_proxy_metadata=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" 2>&1)
-          
+
               # Check if the gcloud command failed
               if [ $? -ne 0 ]; then
                   echo "Error: Failed to fetch metadata for instance $instance_name in zone $zone"
                   echo "gcloud output: $sql_proxy_metadata"
                   return 1  # Exit the function with an error code
               fi
-          
+
+              # Check if metadata is empty
+              if [ -z "$sql_proxy_metadata" ]; then
+                  echo "Warning: No startup-script metadata found for instance $instance_name in $zone. Skipping."
+                  return 0  # Continue even if this instance doesn't have the metadata
+              fi
+
               # Extract Cloud SQL Proxy version using regex
               sql_proxy_version=$(echo "$sql_proxy_metadata" | grep -oP 'v\d+\.\d+\.\d+')
-          
+
               if [ -z "$sql_proxy_version" ]; then
                   echo "Warning: Could not extract Cloud SQL Auth Proxy version from metadata for instance $instance_name in $zone. Skipping."
                   return 0
               fi
-          
+
               echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
               echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
           }
-
 
           # Fetch the instance names and zones dynamically for cloud-sql-connect and sql-proxy
           instances_and_zones=$(gcloud compute instances list --format="csv[no-heading](name,zone)" | grep -E 'cloud-sql-connect|.*-proxy-*')
@@ -125,26 +122,16 @@ jobs:
           fi
 
 
+
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
         run: |
           latest_version=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r '.tag_name')
-          
-          # Split the version into major, minor, and patch
-          IFS='.' read -r major minor patch <<< "$(echo $latest_version | sed 's/v//')"
-      
-          # Decrement the minor version properly, ensuring it doesn't go negative
-          if [ "$minor" -gt 0 ]; then
-            n_minus_1_version="v${major}.$((minor - 1)).0"
-          else
-            # If minor version is 0, we need to handle the rollback (e.g., from 2.0.0 to 1.x.x)
-            n_minus_1_version="v$((major - 1)).X.X"
-          fi
-      
+          # Extract the n-1 version from the latest version
+          n_minus_1_version=$(echo $latest_version | awk -F. '{$NF--; print $0}' OFS=.)
           echo "Latest Cloud SQL Auth Proxy version: $latest_version"
           echo "N-1 version: $n_minus_1_version"
           echo "N_MINUS_1_VERSION=$n_minus_1_version" >> $GITHUB_ENV
-
 
       - name: Compare versions and send Slack alerts if updates are needed
         run: |
