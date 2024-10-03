@@ -45,66 +45,68 @@ jobs:
       - name: Fetch Cloud SQL Auth Proxy version from instance metadata
         run: |
           fetch_sql_auth_proxy_version() {
-              local instance_name=$1
-              local zone=$2
-
-              echo "Fetching SQL Auth Proxy version for instance: $instance_name in zone: $zone"
-
-              sql_proxy_metadata=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" 2>&1)
-
+              local template_name=$1
+          
+              echo "Fetching SQL Auth Proxy version for template: $template_name"
+          
+              template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
+          
               if [ $? -ne 0 ]; then
-                  echo "Error: Failed to fetch metadata for instance $instance_name in zone $zone"
-                  echo "gcloud output: $sql_proxy_metadata"
+                  echo "Error: Failed to fetch metadata for template $template_name"
+                  echo "gcloud output: $template_metadata"
                   return 1
               fi
-
-              if [ -z "$sql_proxy_metadata" ]; then
-                  echo "Warning: No startup-script metadata found for instance $instance_name in $zone. Skipping."
+          
+              startup_script=$(echo "$template_metadata" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value')
+          
+              if [ -z "$startup_script" ]; then
+                  echo "Warning: No startup-script metadata found for template $template_name. Skipping."
                   return 0
               fi
-
-              sql_proxy_version=$(echo "$sql_proxy_metadata" | grep -oP 'v\d+\.\d+\.\d+')
-
+          
+              sql_proxy_version=$(echo "$startup_script" | grep -oP 'v\d+\.\d+\.\d+')
+          
               if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from metadata for instance $instance_name in $zone. Skipping."
+                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from metadata for template $template_name. Skipping."
                   return 0
               fi
-
-              echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
-              echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
+          
+              echo "Template $template_name is using Cloud SQL Auth Proxy version $sql_proxy_version."
+              echo "$template_name,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
           }
-
-          instances_and_zones=$(gcloud compute instances list --format="csv[no-heading](name,zone)" | grep -E 'cloud-sql-connect|.*-proxy-*')
-
-          if [ -z "$instances_and_zones" ]; then
-              echo "Warning: No instances found matching the criteria."
+          
+          # Fetch all instance templates matching the criteria
+          templates=$(gcloud compute instance-templates list --filter="name:cloud-sql-auth-template-*" --format="value(name)")
+          
+          if [ -z "$templates" ]; then
+              echo "Warning: No instance templates found matching the criteria."
               echo "[]" > sql_auth_proxy_versions.json
               exit 0
           fi
-
+          
           echo "[" > sql_auth_proxy_versions.json
-
-          while IFS=, read -r instance_name zone; do
-              echo "Processing instance: $instance_name in zone: $zone"
-              fetch_sql_auth_proxy_version "$instance_name" "$zone"
+          
+          while read -r template_name; do
+              echo "Processing template: $template_name"
+              fetch_sql_auth_proxy_version "$template_name"
               
               if [ $? -eq 0 ] && [ -f sql_auth_proxy_versions.txt ]; then
-                  version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f3)
-                  echo "  {\"instance\": \"$instance_name\", \"zone\": \"$zone\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
+                  version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f2)
+                  echo "  {\"template\": \"$template_name\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
               else
-                  echo "Skipping instance $instance_name due to errors or missing version."
+                  echo "Skipping template $template_name due to errors or missing version."
               fi
-          done <<< "$instances_and_zones"
-
+          done <<< "$templates"
+          
           sed -i '$ s/,$//' sql_auth_proxy_versions.json
           echo "]" >> sql_auth_proxy_versions.json
-
+          
           if [ -f sql_auth_proxy_versions.json ]; then
               echo "SQL Auth Proxy versions were successfully fetched and saved."
               cat sql_auth_proxy_versions.json
           else
-              echo "Warning: No SQL Auth Proxy versions were found for any instances."
+              echo "Warning: No SQL Auth Proxy versions were found for any templates."
               echo "[]" > sql_auth_proxy_versions.json
           fi
 
