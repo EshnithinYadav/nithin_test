@@ -50,6 +50,7 @@ jobs:
               echo "Fetching SQL Auth Proxy version for template: $template_name"
           
               template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
+              cat template_metadata
           
               if [ $? -ne 0 ]; then
                   echo "Error: Failed to fetch metadata for template $template_name"
@@ -58,6 +59,7 @@ jobs:
               fi
           
               startup_script=$(echo "$template_metadata" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value')
+              cat startup_script
           
               if [ -z "$startup_script" ]; then
                   echo "Warning: No startup-script metadata found for template $template_name. Skipping."
@@ -78,6 +80,7 @@ jobs:
           
           # Fetch all instance templates matching the criteria
           templates=$(gcloud compute instance-templates list --filter="name:cloud-sql-auth-template-*" --format="value(name)")
+          cat templates
           
           if [ -z "$templates" ]; then
               echo "Warning: No instance templates found matching the criteria."
@@ -101,6 +104,7 @@ jobs:
           
           sed -i '$ s/,$//' sql_auth_proxy_versions.json
           echo "]" >> sql_auth_proxy_versions.json
+          cat sql_auth_proxy_versions.json
           
           if [ -f sql_auth_proxy_versions.json ]; then
               echo "SQL Auth Proxy versions were successfully fetched and saved."
