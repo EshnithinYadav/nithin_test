@@ -38,11 +38,11 @@ jobs:
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: ${{ matrix.env == 'stage' && secrets.GCP_SA_KEY_STAGE_PLAIN || secrets.GCP_SA_KEY_PROD_PLAIN }}
+          credentials_json: ${{ matrix.env == 'stage' && secrets.GCP_SA_KEY_STAGE_PLAIN || secrets.GCP_SA_KEY_PROD_PLAIN }} > $HOME/gcp-key.json
         
       - name: Authenticate to Google Cloud
         run: |
-          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
+          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}"  > $HOME/gcp-key.json
           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
           gcloud config set project ${{ env.GCP_PROJECT_ID }}
 
