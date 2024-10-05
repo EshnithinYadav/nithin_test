@@ -46,11 +46,10 @@ jobs:
         run: |
           fetch_sql_auth_proxy_version() {
               local template_name=$1
-          
               echo "Fetching SQL Auth Proxy version for template: $template_name"
           
-              # Fetch the template metadata
               template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
+              echo "Template metadata: $template_metadata"  # Debug output
           
               if [ $? -ne 0 ]; then
                   echo "Error: Failed to fetch metadata for template $template_name"
@@ -58,17 +57,16 @@ jobs:
                   return 1
               fi
           
-              # Extract the startup script from the metadata
               startup_script=$(echo "$template_metadata" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value')
+              echo "Startup script: $startup_script"  # Debug output
           
               if [ -z "$startup_script" ]; then
                   echo "Warning: No startup-script metadata found for template $template_name. Skipping."
                   return 0
               fi
           
-              # Extract the Cloud SQL Auth Proxy version from the startup script (vX.Y.Z)
-              # sql_proxy_version=$(echo "$startup_script" | grep -oP 'v\d+\.\d+\.\d+')
               sql_proxy_version=$(echo "$startup_script" | grep -oP 'cloud-sql-proxy/v\K\d+\.\d+\.\d+')
+              echo "Extracted SQL Proxy Version: $sql_proxy_version"  # Debug output
           
               if [ -z "$sql_proxy_version" ]; then
                   echo "Warning: Could not extract Cloud SQL Auth Proxy version from the startup script for template $template_name. Skipping."
@@ -79,6 +77,9 @@ jobs:
               echo "$template_name,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
           }
+
+          
+                  
           
           # Fetch instances matching the criteria
           instances_and_zones=$(gcloud compute instances list --format="csv[no-heading](name,zone)" | grep -E 'cloud-sql-connect|.*-proxy-*')
