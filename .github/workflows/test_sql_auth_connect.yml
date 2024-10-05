@@ -43,19 +43,20 @@ jobs:
         if: success()
         run: |
           echo "Posting version info to Slack..."
-    
+          
           # Check if prod_versions.json contains valid JSON
           if ! jq empty prod_versions.json; then
             echo "Error: prod_versions.json contains invalid JSON" >&2
             exit 1
           fi
-    
+          
           # Prepare Slack payload
-          version_info=$(jq -c '.' prod_versions.json)
-          payload=$(jq -n --argjson data "$version_info" '{text: "Cloud SQL Auth Proxy Version Info for PROD: \($data)"}')
+          version_info=$(cat prod_versions.json)
+          payload=$(jq -n --arg data "$version_info" '{text: "Cloud SQL Auth Proxy Version Info for PROD: \($data)"}')
           
           # Post to Slack
           curl -X POST -H 'Content-type: application/json' --data "$payload" $SLACK_WEBHOOK_URL_PROD
+
 
       - name: Clean up key file (PROD)
         run: |
