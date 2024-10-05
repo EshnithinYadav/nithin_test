@@ -12,8 +12,8 @@ jobs:
     env:
       GCP_PROJECT_ID_PROD: ${{ secrets.GCP_PROJECT_ID_PROD }}
       GCP_PROJECT_ID_STAGE: ${{ secrets.GCP_PROJECT_ID_STAGE }}
-      GCP_SA_KEY_PROD: ${{ secrets.GCP_SA_KEY_PROD_PLAIN }}
-      GCP_SA_KEY_STAGE: ${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}
+      GCP_SA_KEY_PROD: ${{ secrets.GCP_SA_KEY_PROD }}
+      GCP_SA_KEY_STAGE: ${{ secrets.GCP_SA_KEY_STAGE }}
       SLACK_WEBHOOK_URL_PROD: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
       SLACK_WEBHOOK_URL_STAGE: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}
 
@@ -21,10 +21,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Create a temporary file for the service account key (PROD)
+      # Write service account key to a temporary file (PROD)
       - name: Set up Google Cloud SDK for PROD
         run: |
-          echo "${{ secrets.GCP_SA_KEY_PROD }}" > $HOME/gcloud-prod-key.json
+          echo "${{ secrets.GCP_SA_KEY_PROD }}" | base64 --decode > $HOME/gcloud-prod-key.json
           gcloud auth activate-service-account --key-file=$HOME/gcloud-prod-key.json
           gcloud config set project $GCP_PROJECT_ID_PROD
 
@@ -53,7 +53,7 @@ jobs:
       # Repeat steps for STAGE environment
       - name: Set up Google Cloud SDK for STAGE
         run: |
-          echo "${{ secrets.GCP_SA_KEY_STAGE }}" > $HOME/gcloud-stage-key.json
+          echo "${{ secrets.GCP_SA_KEY_STAGE }}" | base64 --decode > $HOME/gcloud-stage-key.json
           gcloud auth activate-service-account --key-file=$HOME/gcloud-stage-key.json
           gcloud config set project $GCP_PROJECT_ID_STAGE
 
