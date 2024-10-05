@@ -51,9 +51,23 @@ jobs:
               local template_name=$1
               echo "Fetching SQL Auth Proxy version for template: $template_name"
           
-              # template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
-              # Get instance template associated with the instance
-              template_name=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script-url)" | grep -oP 'cloud-sql-auth-template-\S+')
+              while read -r instance_and_zone; do
+                  instance_name=$(echo "$instance_and_zone" | cut -d',' -f1)
+                  zone=$(echo "$instance_and_zone" | cut -d',' -f2)
+                  echo "Processing instance: $instance_name in zone: $zone"
+              
+                  # Correctly get the instance template associated with the instance
+                  template_name=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items[?(@.key == 'instance-template')].value)")
+              
+                  if [ -z "$template_name" ]; then
+                      echo "Warning: No associated instance template found for instance $instance_name in zone $zone. Skipping."
+                      continue
+                  fi
+              
+                  echo "Fetched template name: $template_name"  # Debug output
+                  fetch_sql_auth_proxy_version "$template_name"
+              done <<< "$instances_and_zones"
+
 
               echo "Template metadata: $template_metadata"  # Debug output
           
