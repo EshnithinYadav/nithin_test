@@ -67,7 +67,8 @@ jobs:
               fi
           
               # Extract the Cloud SQL Auth Proxy version from the startup script (vX.Y.Z)
-              sql_proxy_version=$(echo "$startup_script" | grep -oP 'v\d+\.\d+\.\d+')
+              # sql_proxy_version=$(echo "$startup_script" | grep -oP 'v\d+\.\d+\.\d+')
+              sql_proxy_version=$(echo "$startup_script" | grep -oP 'cloud-sql-proxy/v\K\d+\.\d+\.\d+')
           
               if [ -z "$sql_proxy_version" ]; then
                   echo "Warning: Could not extract Cloud SQL Auth Proxy version from the startup script for template $template_name. Skipping."
