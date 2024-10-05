@@ -77,13 +77,9 @@ jobs:
               echo "$template_name,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
           }
-
-          
-                  
           
           # Fetch instances matching the criteria
           instances_and_zones=$(gcloud compute instances list --format="csv[no-heading](name,zone)" | grep -E 'cloud-sql-connect|.*-proxy-*')
-          
           if [ -z "$instances_and_zones" ]; then
               echo "Warning: No instances found matching the criteria."
               echo "[]" > sql_auth_proxy_versions.json
@@ -99,14 +95,15 @@ jobs:
           
               # Get instance template associated with the instance
               template_name=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script-url)" | grep -oP 'cloud-sql-auth-template-\S+')
-              
+          
               if [ -z "$template_name" ]; then
                   echo "Warning: No associated instance template found for instance $instance_name in zone $zone. Skipping."
                   continue
               fi
               
+              echo "Fetched template name: $template_name"  # Debug output
               fetch_sql_auth_proxy_version "$template_name"
-              
+          
               if [ $? -eq 0 ] && [ -f sql_auth_proxy_versions.txt ]; then
                   version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f2)
                   echo "  {\"instance\": \"$instance_name\", \"zone\": \"$zone\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
@@ -125,8 +122,6 @@ jobs:
               echo "Warning: No SQL Auth Proxy versions were found for any instances."
               echo "[]" > sql_auth_proxy_versions.json
           fi
-
-
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
