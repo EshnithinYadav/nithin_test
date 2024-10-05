@@ -1,5 +1,6 @@
 name: GCP Cloud SQL Auth Proxy Version Check and Send Slack Alerts
 
+
 on:
   workflow_dispatch:
 
@@ -44,6 +45,8 @@ jobs:
 
       - name: Fetch Cloud SQL Auth Proxy version from instance metadata
         run: |
+          #!/bin/bash
+          set -x  # Enable debugging
           fetch_sql_auth_proxy_version() {
               local template_name=$1
               echo "Fetching SQL Auth Proxy version for template: $template_name"
