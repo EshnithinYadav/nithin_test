@@ -11,11 +11,8 @@ jobs:
 
     env:
       GCP_PROJECT_ID_PROD: ${{ secrets.GCP_PROJECT_ID_PROD }}
-      GCP_PROJECT_ID_STAGE: ${{ secrets.GCP_PROJECT_ID_STAGE }}
       GCP_SA_KEY_PROD: ${{ secrets.GCP_SA_KEY_PROD }}
-      GCP_SA_KEY_STAGE: ${{ secrets.GCP_SA_KEY_STAGE }}
       SLACK_WEBHOOK_URL_PROD: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
-      SLACK_WEBHOOK_URL_STAGE: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}
 
     steps:
       - name: Checkout code
