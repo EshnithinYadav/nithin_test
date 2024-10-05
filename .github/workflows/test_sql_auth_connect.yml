@@ -21,17 +21,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
+      # Authenticate with Google Cloud using the service account key
+      - name: Set up Google Cloud SDK for PROD
+        uses: google-github-actions/auth@v1
         with:
-          project_id: ${{ env.GCP_PROJECT_ID_PROD }}
-          service_account_key: ${{ env.GCP_SA_KEY_PROD }}
-          export_default_credentials: true
+          credentials_json: ${{ secrets.GCP_SA_KEY_PROD }}
+
+      - name: Configure gcloud for PROD project
+        run: |
+          gcloud config set project $GCP_PROJECT_ID_PROD
+          gcloud auth activate-service-account --key-file=${{ secrets.GCP_SA_KEY_PROD }}
 
       - name: Fetch instance templates in PROD
         run: |
-          echo "Fetching instance templates..."
-          gcloud compute instance-templates list --project=$GCP_PROJECT_ID_PROD --format=json > prod_instance_templates.json
+          echo "Fetching instance templates for PROD..."
+          gcloud compute instance-templates list --format=json > prod_instance_templates.json
 
       - name: Extract version info from PROD templates
         run: |
@@ -45,17 +49,20 @@ jobs:
           echo "Posting version info to Slack..."
           curl -X POST -H 'Content-type: application/json' --data "$(jq -n --argjson data "$(cat prod_versions.json)" '{text: "Cloud SQL Auth Proxy Version Info for PROD: \($data)"}')" $SLACK_WEBHOOK_URL_PROD
 
-      - name: Set up Google Cloud SDK (STAGE)
-        uses: google-github-actions/setup-gcloud@v1
+      - name: Set up Google Cloud SDK for STAGE
+        uses: google-github-actions/auth@v1
         with:
-          project_id: ${{ env.GCP_PROJECT_ID_STAGE }}
-          service_account_key: ${{ env.GCP_SA_KEY_STAGE }}
-          export_default_credentials: true
+          credentials_json: ${{ secrets.GCP_SA_KEY_STAGE }}
+
+      - name: Configure gcloud for STAGE project
+        run: |
+          gcloud config set project $GCP_PROJECT_ID_STAGE
+          gcloud auth activate-service-account --key-file=${{ secrets.GCP_SA_KEY_STAGE }}
 
       - name: Fetch instance templates in STAGE
         run: |
-          echo "Fetching instance templates..."
-          gcloud compute instance-templates list --project=$GCP_PROJECT_ID_STAGE --format=json > stage_instance_templates.json
+          echo "Fetching instance templates for STAGE..."
+          gcloud compute instance-templates list --format=json > stage_instance_templates.json
 
       - name: Extract version info from STAGE templates
         run: |
