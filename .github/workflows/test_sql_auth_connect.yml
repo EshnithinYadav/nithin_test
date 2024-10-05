@@ -11,23 +11,22 @@ jobs:
 
     env:
       GCP_PROJECT_ID_PROD: ${{ secrets.GCP_PROJECT_ID_PROD }}
+      GCP_PROJECT_ID_STAGE: ${{ secrets.GCP_PROJECT_ID_STAGE }}
       GCP_SA_KEY_PROD: ${{ secrets.GCP_SA_KEY_PROD }}
+      GCP_SA_KEY_STAGE: ${{ secrets.GCP_SA_KEY_STAGE }}
       SLACK_WEBHOOK_URL_PROD: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
+      SLACK_WEBHOOK_URL_STAGE: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Authenticate with Google Cloud using the service account key
+      # Create a temporary file for the service account key (PROD)
       - name: Set up Google Cloud SDK for PROD
-        uses: google-github-actions/auth@v1
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY_PROD }}
-
-      - name: Configure gcloud for PROD project
         run: |
+          echo "${{ secrets.GCP_SA_KEY_PROD }}" > $HOME/gcloud-prod-key.json
+          gcloud auth activate-service-account --key-file=$HOME/gcloud-prod-key.json
           gcloud config set project $GCP_PROJECT_ID_PROD
-          gcloud auth activate-service-account --key-file=${{ secrets.GCP_SA_KEY_PROD }}
 
       - name: Fetch instance templates in PROD
         run: |
@@ -46,15 +45,17 @@ jobs:
           echo "Posting version info to Slack..."
           curl -X POST -H 'Content-type: application/json' --data "$(jq -n --argjson data "$(cat prod_versions.json)" '{text: "Cloud SQL Auth Proxy Version Info for PROD: \($data)"}')" $SLACK_WEBHOOK_URL_PROD
 
-      - name: Set up Google Cloud SDK for STAGE
-        uses: google-github-actions/auth@v1
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY_STAGE }}
-
-      - name: Configure gcloud for STAGE project
+      # Clean up the service account key (PROD)
+      - name: Clean up key file (PROD)
         run: |
+          rm $HOME/gcloud-prod-key.json
+
+      # Repeat steps for STAGE environment
+      - name: Set up Google Cloud SDK for STAGE
+        run: |
+          echo "${{ secrets.GCP_SA_KEY_STAGE }}" > $HOME/gcloud-stage-key.json
+          gcloud auth activate-service-account --key-file=$HOME/gcloud-stage-key.json
           gcloud config set project $GCP_PROJECT_ID_STAGE
-          gcloud auth activate-service-account --key-file=${{ secrets.GCP_SA_KEY_STAGE }}
 
       - name: Fetch instance templates in STAGE
         run: |
@@ -72,3 +73,8 @@ jobs:
         run: |
           echo "Posting version info to Slack..."
           curl -X POST -H 'Content-type: application/json' --data "$(jq -n --argjson data "$(cat stage_versions.json)" '{text: "Cloud SQL Auth Proxy Version Info for STAGE: \($data)"}')" $SLACK_WEBHOOK_URL_STAGE
+
+      # Clean up the service account key (STAGE)
+      - name: Clean up key file (STAGE)
+        run: |
+          rm $HOME/gcloud-stage-key.json
