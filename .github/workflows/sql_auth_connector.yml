@@ -98,7 +98,8 @@ jobs:
               echo "Processing instance: $instance_name in zone: $zone"
           
               # Correctly get the instance template associated with the instance
-              template_name=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items[?(@.key == 'instance-template')].value)")
+              template_name=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items)" | grep -oP '(?<=instance-template: ).*')
+
           
               if [ -z "$template_name" ]; then
                   echo "Warning: No associated instance template found for instance $instance_name in zone $zone. Skipping."
