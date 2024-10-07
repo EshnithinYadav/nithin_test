@@ -76,6 +76,21 @@ jobs:
         upgrade_available="false"
         instances_info=""
 
+        # Function to compare version strings
+        version_ge() {
+            # Compare version 1 and version 2
+            # Return true if version 1 >= version 2
+            IFS='.' read -r -a v1 <<< "$1"
+            IFS='.' read -r -a v2 <<< "$2"
+            for ((i = 0; i < ${#v1[@]} || i < ${#v2[@]}; i++)); do
+                local segment1=${v1[i]:-0}
+                local segment2=${v2[i]:-0}
+                if ((10#$segment1 > 10#$segment2)); then return 0; fi
+                if ((10#$segment1 < 10#$segment2)); then return 1; fi
+            done
+            return 0
+        }
+
         # Calculate n-1 version
         major_version=$(echo "$latest_version" | cut -d '.' -f 1)
         minor_version=$(echo "$latest_version" | cut -d '.' -f 2)
@@ -85,7 +100,8 @@ jobs:
           instance_name=$(echo "$line" | cut -d ':' -f 1)
           current_version=$(echo "$line" | cut -d ':' -f 2 | xargs) # Trim whitespace
 
-          if [[ "$current_version" < "$n_minus_one_version" ]]; then
+          # Compare current version with n-1 version
+          if version_ge "$n_minus_one_version" "$current_version"; then
             upgrade_available="true"
             instances_info+="Instance: $instance_name, Current Version: $current_version, Latest n-1 Version: $n_minus_one_version\n"
           fi
