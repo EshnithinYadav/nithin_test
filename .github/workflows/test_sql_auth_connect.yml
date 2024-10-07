@@ -17,7 +17,7 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
         with:
-          service_account_key: ${{ secrets.GCP_SA_KEY_PLAIN }}  # Set this in GitHub Secrets
+          service_account_key: ${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}  # Set this in GitHub Secrets
           project_id: ${{ secrets.GCP_PROJECT_ID_STAGE }}  # Ensure this is a secret
 
       - name: Fetch Instance Templates
