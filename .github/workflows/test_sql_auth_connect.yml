@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [stage]
+        environment: [prod, stage]
 
     steps:
     - name: Checkout code
@@ -26,7 +26,7 @@ jobs:
     - name: Authenticate to Google Cloud
       uses: google-github-actions/auth@v2
       with:
-        credentials_json: ${{ secrets[format('GCP_SA_KEY_{0}_PLAIN', matrix.environment)] }}
+        credentials_json: ${{ secrets[format('GCP_SA_KEY_{0}', matrix.environment)] }}
 
     - name: Fetch Instance Templates
       id: fetch_templates
@@ -38,27 +38,28 @@ jobs:
     - name: Get Versions
       id: get_versions
       run: |
-        # Initialize a variable to store versions
+        # Initialize a variable to store unique versions
         versions=""
 
         # Loop through each template and get the version
         while read -r template; do
           version=$(gcloud compute instance-templates describe "$template" --format=json | \
-                    grep -oP 'storage.googleapis.com.*?v\K[0-9]+\.[0-9]+\.[0-9]+')
+                    grep -oP 'storage.googleapis.com.*?v\K[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
           if [ -n "$version" ]; then
             versions="$versions$version"$'\n'
           fi
         done < templates.txt
 
-        # Print and save the versions
+        # Print and save the unique versions
         echo "Versions found:"
         echo "$versions"
-        echo "versions=$versions" >> $GITHUB_ENV  # Set the output for later steps
+        # Use a delimiter to ensure proper formatting in the environment variable
+        echo "versions=${versions//$'\n'/, }" >> $GITHUB_ENV  # Replace newlines with commas for the environment variable
 
     - name: Display Versions
       run: |
         echo "Fetched SQL Auth Connector Versions:"
-        echo "$versions"
+        echo "${{ env.versions }}"
 
     - name: Send Slack Notification
       if: always()  # Always send a notification regardless of success or failure
