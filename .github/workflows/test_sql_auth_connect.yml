@@ -101,7 +101,7 @@ jobs:
           current_version=$(echo "$line" | cut -d ':' -f 2 | xargs) # Trim whitespace
 
           # Compare current version with n-1 version
-          if version_ge "$n_minus_one_version" "$current_version"; then
+          if version_ge "$current_version" "$n_minus_one_version"; then
             upgrade_available="true"
             instances_info+="Instance: $instance_name, Current Version: $current_version, Latest n-1 Version: $n_minus_one_version\\n" # Add escape for newline
           fi
