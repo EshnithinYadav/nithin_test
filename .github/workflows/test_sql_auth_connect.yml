@@ -46,7 +46,7 @@ jobs:
           version=$(gcloud compute instance-templates describe "$template" --format=json | \
                     grep -oP 'storage.googleapis.com.*?v\K[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
           if [ -n "$version" ]; then
-            versions="$versions$version"$'\n'
+            versions="$versions$template: $version"$'\n'
           fi
         done < templates.txt
 
@@ -61,9 +61,48 @@ jobs:
         echo "Fetched SQL Auth Connector Versions:"
         echo "${{ env.versions }}"
 
-    - name: Send Slack Notification
-      if: always()  # Always send a notification regardless of success or failure
-      uses: 8398a7/action-slack@v3  # Ensure the action is available and updated
+    - name: Fetch Latest Release Version
+      id: fetch_latest_release
+      run: |
+        latest_version=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r '.tag_name' | cut -c 2-) # Removes the 'v' prefix
+        echo "Latest release version: $latest_version"
+        echo "::set-output name=latest_version::$latest_version"
+
+    - name: Compare Versions
+      id: compare_versions
+      run: |
+        current_versions="${{ env.versions }}"
+        latest_version="${{ steps.fetch_latest_release.outputs.latest_version }}"
+        upgrade_available="false"
+        instances_info=""
+
+        # Calculate n-1 version
+        major_version=$(echo "$latest_version" | cut -d '.' -f 1)
+        minor_version=$(echo "$latest_version" | cut -d '.' -f 2)
+        n_minus_one_version="$major_version.$minor_version.$(( $(echo "$latest_version" | cut -d '.' -f 3) - 1 ))"
+
+        while IFS= read -r line; do
+          instance_name=$(echo "$line" | cut -d ':' -f 1)
+          current_version=$(echo "$line" | cut -d ':' -f 2 | xargs) # Trim whitespace
+
+          if [[ "$current_version" < "$n_minus_one_version" ]]; then
+            upgrade_available="true"
+            instances_info+="Instance: $instance_name, Current Version: $current_version, Latest n-1 Version: $n_minus_one_version\n"
+          fi
+        done <<< "$current_versions"
+
+        if [ "$upgrade_available" = "true" ]; then
+          echo "Upgrade available."
+          echo -e "$instances_info" >> $GITHUB_ENV
+          echo "upgrade_available=true" >> $GITHUB_ENV
+        else
+          echo "No version upgrade needed."
+          echo "upgrade_available=false" >> $GITHUB_ENV
+        fi
+
+    - name: Send Slack Notification If Upgrade Available
+      if: env.upgrade_available == 'true'
+      uses: 8398a7/action-slack@v3
       with:
         status: custom
         fields: custom
@@ -75,7 +114,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": "*SQL Auth Connector Versions Fetched*"
+                  "text": "*SQL Auth Connector Version Upgrade Available*"
                 }
               },
               {
@@ -83,15 +122,40 @@ jobs:
                 "fields": [
                   {
                     "type": "mrkdwn",
-                    "text": "*Environment:*\n${{ matrix.environment }}"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Versions:*\n${{ env.versions }}"
+                    "text": "*Instances Information:*\n${{ env.instances_info }}"
                   }
                 ]
               }
             ]
           }
       env:
-        SLACK_WEBHOOK_URL: ${{ secrets[format('SLACK_WEBHOOK_URL_{0}', matrix.environment)] }}  # Ensure this secret is configured
+        SLACK_WEBHOOK_URL: ${{ secrets[format('SLACK_WEBHOOK_URL_{0}', matrix.environment)] }}
+
+    - name: Send Slack Notification on Failure
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        fields: custom
+        author_name: "SQL Auth Connector Version Check Failure"
+        custom_payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*SQL Auth Connector Version Check Script Failed*"
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "Please investigate the issue."
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets[format('SLACK_WEBHOOK_URL_{0}', matrix.environment)] }}
