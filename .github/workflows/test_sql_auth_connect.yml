@@ -103,18 +103,20 @@ jobs:
           # Compare current version with n-1 version
           if version_ge "$n_minus_one_version" "$current_version"; then
             upgrade_available="true"
-            instances_info+="Instance: $instance_name, Current Version: $current_version, Latest n-1 Version: $n_minus_one_version\n"
+            instances_info+="Instance: $instance_name, Current Version: $current_version, Latest n-1 Version: $n_minus_one_version\\n" # Add escape for newline
           fi
         done <<< "$current_versions"
 
         if [ "$upgrade_available" = "true" ]; then
           echo "Upgrade available."
           echo -e "$instances_info" >> $GITHUB_ENV
+          echo "instances_info=${instances_info//$'\n'/\\n}" >> $GITHUB_ENV # Escape newlines for environment variable
           echo "upgrade_available=true" >> $GITHUB_ENV
         else
           echo "No version upgrade needed."
           echo "upgrade_available=false" >> $GITHUB_ENV
         fi
+
 
     - name: Send Slack Notification If Upgrade Available
       if: env.upgrade_available == 'true'
