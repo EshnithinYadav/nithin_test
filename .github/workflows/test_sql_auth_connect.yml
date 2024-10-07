@@ -54,7 +54,7 @@ jobs:
           echo "$versions"
 
       - name: Send Slack Notification
-        uses: slackapi/slack-github-action@v1.20.1
+        uses: slackapi/slack-github-action@v1  # Updated to use the latest version
         with:
           payload: |
             {
