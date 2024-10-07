@@ -1,92 +1,64 @@
-name: Fetch SQL Auth Proxy Versions
+name: Fetch SQL Auth Connector Version
 
 on:
-  schedule:
-    - cron: "0 0 * * *"  # Runs daily at midnight, adjust as needed
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  fetch-versions:
+  fetch-version:
     runs-on: ubuntu-latest
-
-    env:
-      GCP_PROJECT_ID_PROD: ${{ secrets.GCP_PROJECT_ID_PROD }}
-      GCP_PROJECT_ID_STAGE: ${{ secrets.GCP_PROJECT_ID_STAGE }}
-      GCP_SA_KEY_PROD: ${{ secrets.GCP_SA_KEY_PROD }}
-      GCP_SA_KEY_STAGE: ${{ secrets.GCP_SA_KEY_STAGE }}
-      SLACK_WEBHOOK_URL_PROD: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
-      SLACK_WEBHOOK_URL_STAGE: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v2
 
-      # Write service account key to a temporary file (PROD)
-      - name: Set up Google Cloud SDK for PROD
-        run: |
-          echo "${{ secrets.GCP_SA_KEY_PROD }}" | base64 --decode > $HOME/gcloud-prod-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcloud-prod-key.json
-          gcloud config set project $GCP_PROJECT_ID_PROD
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0.2.0
+        with:
+          service_account_key: ${{ secrets.GCP_SA_KEY_PLAIN }}  # Set this in GitHub Secrets
+          project_id: GCP_PROJECT_ID_STAGE
 
-      - name: Fetch instance templates in PROD
+      - name: Fetch Instance Templates
+        id: fetch_templates
         run: |
-          echo "Fetching instance templates for PROD..."
-          gcloud compute instance-templates list --format=json > prod_instance_templates.json
+          # Fetch all instance templates related to SQL Auth Connector
+          gcloud compute instance-templates list --format="get(name)" | grep "cloudsql-auth-template" > templates.txt
+          echo "Fetched templates: $(cat templates.txt)"
 
-      - name: Extract version info from PROD templates
+      - name: Get Versions
+        id: get_versions
         run: |
-          echo "Extracting version information..."
-          cat prod_instance_templates.json | jq '.[] | {name: .name, version: .properties.metadata.items[] | select(.key=="cloud-sql-auth-proxy-version") | .value}' > prod_versions.json
-          cat prod_versions.json
-
-      - name: Post to Slack (PROD)
-        if: success()
-        run: |
-          echo "Posting version info to Slack..."
+          # Initialize a variable to store versions
+          versions=""
           
-          # Check if prod_versions.json contains valid JSON
-          if ! jq empty prod_versions.json; then
-            echo "Error: prod_versions.json contains invalid JSON" >&2
-            exit 1
-          fi
-          
-          # Prepare Slack payload
-          version_info=$(cat prod_versions.json)
-          payload=$(jq -n --arg data "$version_info" '{text: "Cloud SQL Auth Proxy Version Info for PROD: \($data)"}')
-          
-          # Post to Slack
-          curl -X POST -H 'Content-type: application/json' --data "$payload" $SLACK_WEBHOOK_URL_PROD
+          # Loop through each template and get the version
+          while read -r template; do
+            version=$(gcloud compute instance-templates describe "$template" --format=json | \
+                      grep -oP 'storage.googleapis.com.*?v\K[0-9]+\.[0-9]+\.[0-9]+')
+            if [ -n "$version" ]; then
+              versions="$versions$version"$'\n'
+            fi
+          done < templates.txt
 
+          # Print and save the versions
+          echo "Versions found:"
+          echo "$versions"
+          echo "::set-output name=versions::$versions"  # Set the output for later steps
 
-      - name: Clean up key file (PROD)
+      - name: Display Versions
         run: |
-          rm $HOME/gcloud-prod-key.json
+          echo "Fetched SQL Auth Connector Versions:"
+          echo "${{ steps.get_versions.outputs.versions }}"
 
-      # Repeat steps for STAGE environment
-      - name: Set up Google Cloud SDK for STAGE
-        run: |
-          echo "${{ secrets.GCP_SA_KEY_STAGE }}" | base64 --decode > $HOME/gcloud-stage-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcloud-stage-key.json
-          gcloud config set project $GCP_PROJECT_ID_STAGE
-
-      - name: Fetch instance templates in STAGE
-        run: |
-          echo "Fetching instance templates for STAGE..."
-          gcloud compute instance-templates list --format=json > stage_instance_templates.json
-
-      - name: Extract version info from STAGE templates
-        run: |
-          echo "Extracting version information..."
-          cat stage_instance_templates.json | jq '.[] | {name: .name, version: .properties.metadata.items[] | select(.key=="cloud-sql-auth-proxy-version") | .value}' > stage_versions.json
-          cat stage_versions.json
-
-      - name: Post to Slack (STAGE)
-        if: success()
-        run: |
-          echo "Posting version info to Slack..."
-          curl -X POST -H 'Content-type: application/json' --data "$(jq -n --argjson data "$(cat stage_versions.json)" '{text: "Cloud SQL Auth Proxy Version Info for STAGE: \($data)"}')" $SLACK_WEBHOOK_URL_STAGE
-
-      # Clean up the service account key (STAGE)
-      - name: Clean up key file (STAGE)
-        run: |
-          rm $HOME/gcloud-stage-key.json
+      - name: Send Slack Notification
+        uses: slackapi/slack-github-action@v1.20.1
+        with:
+          payload: |
+            {
+              "channel": "#alerting",  # Replace with your Slack channel
+              "text": "Fetched SQL Auth Connector Versions:\n${{ steps.get_versions.outputs.versions }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}  # Set this in GitHub Secrets
