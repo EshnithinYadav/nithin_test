@@ -1,65 +1,96 @@
 name: Fetch SQL Auth Connector Version
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"  # Runs daily at midnight
 
 jobs:
-  fetch-version:
+  fetch_sql_auth_connector_version:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [stage]
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          service_account_key: ${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}  # Set this in GitHub Secrets
-          project_id: ${{ secrets.GCP_PROJECT_ID_STAGE }}  # Ensure this is a secret
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ secrets[format('GCP_PROJECT_ID_{0}', matrix.environment)] }}
+        version: 'latest'
+        install_components: 'beta'
 
-      - name: Fetch Instance Templates
-        id: fetch_templates
-        run: |
-          # Fetch all instance templates related to SQL Auth Connector
-          gcloud compute instance-templates list --format="get(name)" | grep "cloudsql-auth-template" > templates.txt
-          echo "Fetched templates: $(cat templates.txt)"
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets[format('GCP_SA_KEY_{0}_PLAIN', matrix.environment)] }}
 
-      - name: Get Versions
-        id: get_versions
-        run: |
-          # Initialize a variable to store versions
-          versions=""
+    - name: Fetch Instance Templates
+      id: fetch_templates
+      run: |
+        # Fetch all instance templates related to SQL Auth Connector
+        gcloud compute instance-templates list --format="get(name)" | grep "cloudsql-auth-template" > templates.txt
+        echo "Fetched templates: $(cat templates.txt)"
 
-          # Loop through each template and get the version
-          while read -r template; do
-            version=$(gcloud compute instance-templates describe "$template" --format=json | \
-                      jq -r '.properties.metadata.items[] | select(.key=="startup-script") | .value | capture("storage.googleapis.com.*?v(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)") | .version')
+    - name: Get Versions
+      id: get_versions
+      run: |
+        # Initialize a variable to store versions
+        versions=""
 
-            if [ -n "$version" ]; then
-              versions="$versions$version"$'\n'
-            fi
-          done < templates.txt
+        # Loop through each template and get the version
+        while read -r template; do
+          version=$(gcloud compute instance-templates describe "$template" --format=json | \
+                    grep -oP 'storage.googleapis.com.*?v\K[0-9]+\.[0-9]+\.[0-9]+')
+          if [ -n "$version" ]; then
+            versions="$versions$version"$'\n'
+          fi
+        done < templates.txt
 
-          # Print and save the versions
-          echo "Versions found:"
-          echo "$versions"
-          echo "versions=$versions" >> $GITHUB_ENV  # Set the output for later steps
+        # Print and save the versions
+        echo "Versions found:"
+        echo "$versions"
+        echo "versions=$versions" >> $GITHUB_ENV  # Set the output for later steps
 
-      - name: Display Versions
-        run: |
-          echo "Fetched SQL Auth Connector Versions:"
-          echo "$versions"
+    - name: Display Versions
+      run: |
+        echo "Fetched SQL Auth Connector Versions:"
+        echo "$versions"
 
-      - name: Send Slack Notification
-        uses: slackapi/slack-github-action@v1  # Updated to use the latest version
-        with:
-          payload: |
-            {
-              "channel": "#alerting",  # Replace with your Slack channel
-              "text": "Fetched SQL Auth Connector Versions:\n${{ env.versions }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}  # Set this in GitHub Secrets
+    - name: Send Slack Notification
+      if: always()  # Always send a notification regardless of success or failure
+      uses: 8398a7/action-slack@v3  # Ensure the action is available and updated
+      with:
+        status: custom
+        fields: custom
+        author_name: "SQL Auth Connector Version Check"
+        custom_payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*SQL Auth Connector Versions Fetched*"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Environment:*\n${{ matrix.environment }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Versions:*\n${{ env.versions }}"
+                  }
+                ]
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets[format('SLACK_WEBHOOK_URL_{0}', matrix.environment)] }}  # Ensure this secret is configured
