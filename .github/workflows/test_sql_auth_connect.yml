@@ -9,16 +9,16 @@ on:
 jobs:
   fetch-version:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v0.2.0
+        uses: google-github-actions/setup-gcloud@v1
         with:
           service_account_key: ${{ secrets.GCP_SA_KEY_PLAIN }}  # Set this in GitHub Secrets
-          project_id: GCP_PROJECT_ID_STAGE
+          project_id: ${{ secrets.GCP_PROJECT_ID_STAGE }}  # Ensure this is a secret
 
       - name: Fetch Instance Templates
         id: fetch_templates
@@ -32,11 +32,12 @@ jobs:
         run: |
           # Initialize a variable to store versions
           versions=""
-          
+
           # Loop through each template and get the version
           while read -r template; do
             version=$(gcloud compute instance-templates describe "$template" --format=json | \
-                      grep -oP 'storage.googleapis.com.*?v\K[0-9]+\.[0-9]+\.[0-9]+')
+                      jq -r '.properties.metadata.items[] | select(.key=="startup-script") | .value | capture("storage.googleapis.com.*?v(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)") | .version')
+
             if [ -n "$version" ]; then
               versions="$versions$version"$'\n'
             fi
@@ -45,12 +46,12 @@ jobs:
           # Print and save the versions
           echo "Versions found:"
           echo "$versions"
-          echo "::set-output name=versions::$versions"  # Set the output for later steps
+          echo "versions=$versions" >> $GITHUB_ENV  # Set the output for later steps
 
       - name: Display Versions
         run: |
           echo "Fetched SQL Auth Connector Versions:"
-          echo "${{ steps.get_versions.outputs.versions }}"
+          echo "$versions"
 
       - name: Send Slack Notification
         uses: slackapi/slack-github-action@v1.20.1
@@ -58,7 +59,7 @@ jobs:
           payload: |
             {
               "channel": "#alerting",  # Replace with your Slack channel
-              "text": "Fetched SQL Auth Connector Versions:\n${{ steps.get_versions.outputs.versions }}"
+              "text": "Fetched SQL Auth Connector Versions:\n${{ env.versions }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_STAGE }}  # Set this in GitHub Secrets
