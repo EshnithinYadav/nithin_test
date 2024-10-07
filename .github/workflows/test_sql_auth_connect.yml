@@ -76,41 +76,30 @@ jobs:
         upgrade_available="false"
         instances_info=""
 
-        # Function to compare version strings
-        version_ge() {
-            # Compare version 1 and version 2
-            # Return true if version 1 >= version 2
-            IFS='.' read -r -a v1 <<< "$1"
-            IFS='.' read -r -a v2 <<< "$2"
-            for ((i = 0; i < ${#v1[@]} || i < ${#v2[@]}; i++)); do
-                local segment1=${v1[i]:-0}
-                local segment2=${v2[i]:-0}
-                if ((10#$segment1 > 10#$segment2)); then return 0; fi
-                if ((10#$segment1 < 10#$segment2)); then return 1; fi
-            done
-            return 0
-        }
-
         # Calculate n-1 version
         major_version=$(echo "$latest_version" | cut -d '.' -f 1)
         minor_version=$(echo "$latest_version" | cut -d '.' -f 2)
         n_minus_one_version="$major_version.$minor_version.$(( $(echo "$latest_version" | cut -d '.' -f 3) - 1 ))"
 
+        # Print n-1 version for debugging
+        echo "Calculated n-1 version: $n_minus_one_version"
+
         while IFS= read -r line; do
           instance_name=$(echo "$line" | cut -d ':' -f 1)
           current_version=$(echo "$line" | cut -d ':' -f 2 | xargs) # Trim whitespace
 
-          # Compare current version with n-1 version
-          if version_ge "$current_version" "$n_minus_one_version"; then
+          # Check if the current version is less than the latest or n-1 version
+          if [[ "$current_version" < "$latest_version" ]] || [[ "$current_version" < "$n_minus_one_version" ]]; then
             upgrade_available="true"
-            instances_info+="Instance: $instance_name, Current Version: $current_version, Latest n-1 Version: $n_minus_one_version\\n" # Add escape for newline
+            instances_info+="Instance: $instance_name, Current Version: $current_version, Latest Version: $latest_version, Latest n-1 Version: $n_minus_one_version\\n" # Escape newlines for env variable
           fi
         done <<< "$current_versions"
 
         if [ "$upgrade_available" = "true" ]; then
           echo "Upgrade available."
-          echo -e "$instances_info" >> $GITHUB_ENV
-          echo "instances_info=${instances_info//$'\n'/\\n}" >> $GITHUB_ENV # Escape newlines for environment variable
+          # Ensure instances_info is properly formatted for the GitHub environment variable
+          instances_info="${instances_info//$'\n'/\\n}" # Escape newlines for environment variable
+          echo "instances_info=${instances_info}" >> $GITHUB_ENV
           echo "upgrade_available=true" >> $GITHUB_ENV
         else
           echo "No version upgrade needed."
