@@ -1,6 +1,5 @@
 name: GCP Cloud SQL Auth Proxy Version Check and Send Slack Alerts
 
-
 on:
   workflow_dispatch:
 
@@ -45,81 +44,62 @@ jobs:
 
       - name: Fetch Cloud SQL Auth Proxy version from instance metadata
         run: |
-          #!/bin/bash
-          set -x  # Enable debugging
-          
           fetch_sql_auth_proxy_version() {
-              local template_name=$1
-              echo "Fetching SQL Auth Proxy version for template: $template_name"
-            
-              template_metadata=$(gcloud compute instance-templates describe "$template_name" --format="json" 2>&1)
-              echo "Template metadata: $template_metadata"  # Debug output
-            
+              local instance_name=$1
+              local zone=$2
+
+              echo "Fetching SQL Auth Proxy version for instance: $instance_name in zone: $zone"
+
+              sql_proxy_metadata=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items.startup-script)" 2>&1)
+
               if [ $? -ne 0 ]; then
-                  echo "Error: Failed to fetch metadata for template $template_name"
-                  echo "gcloud output: $template_metadata"
+                  echo "Error: Failed to fetch metadata for instance $instance_name in zone $zone"
+                  echo "gcloud output: $sql_proxy_metadata"
                   return 1
               fi
-            
-              startup_script=$(echo "$template_metadata" | jq -r '.properties.metadata.items[] | select(.key == "startup-script") | .value')
-              echo "Startup script: $startup_script"  # Debug output
-            
-              if [ -z "$startup_script" ]; then
-                  echo "Warning: No startup-script metadata found for template $template_name. Skipping."
+
+              if [ -z "$sql_proxy_metadata" ]; then
+                  echo "Warning: No startup-script metadata found for instance $instance_name in $zone. Skipping."
                   return 0
               fi
-            
-              sql_proxy_version=$(echo "$startup_script" | grep -oP 'cloud-sql-proxy/v\K\d+\.\d+\.\d+')
-              echo "Extracted SQL Proxy Version: $sql_proxy_version"  # Debug output
-            
+
+              sql_proxy_version=$(echo "$sql_proxy_metadata" | grep -oP 'v\d+\.\d+\.\d+')
+
               if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from the startup script for template $template_name. Skipping."
+                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from metadata for instance $instance_name in $zone. Skipping."
                   return 0
               fi
-            
-              echo "Template $template_name is using Cloud SQL Auth Proxy version $sql_proxy_version."
-              echo "$template_name,$sql_proxy_version" >> sql_auth_proxy_versions.txt
+
+              echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
+              echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
           }
-          
-          # Fetch instances matching the criteria
+
           instances_and_zones=$(gcloud compute instances list --format="csv[no-heading](name,zone)" | grep -E 'cloud-sql-connect|.*-proxy-*')
+
           if [ -z "$instances_and_zones" ]; then
               echo "Warning: No instances found matching the criteria."
               echo "[]" > sql_auth_proxy_versions.json
               exit 0
           fi
-          
-          echo "[" > sql_auth_proxy_versions.json
-          
-          while read -r instance_and_zone; do
-              instance_name=$(echo "$instance_and_zone" | cut -d',' -f1)
-              zone=$(echo "$instance_and_zone" | cut -d',' -f2)
-              echo "Processing instance: $instance_name in zone: $zone"
-          
-              # Correctly get the instance template associated with the instance
-              template_name=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(metadata.items)" | grep -oP '(?<=instance-template: ).*')
 
-          
-              if [ -z "$template_name" ]; then
-                  echo "Warning: No associated instance template found for instance $instance_name in zone $zone. Skipping."
-                  continue
-              fi
+          echo "[" > sql_auth_proxy_versions.json
+
+          while IFS=, read -r instance_name zone; do
+              echo "Processing instance: $instance_name in zone: $zone"
+              fetch_sql_auth_proxy_version "$instance_name" "$zone"
               
-              echo "Fetched template name: $template_name"  # Debug output
-              fetch_sql_auth_proxy_version "$template_name"
-            
               if [ $? -eq 0 ] && [ -f sql_auth_proxy_versions.txt ]; then
-                  version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f2)
+                  version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f3)
                   echo "  {\"instance\": \"$instance_name\", \"zone\": \"$zone\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
               else
                   echo "Skipping instance $instance_name due to errors or missing version."
               fi
           done <<< "$instances_and_zones"
-          
+
           sed -i '$ s/,$//' sql_auth_proxy_versions.json
           echo "]" >> sql_auth_proxy_versions.json
-          
+
           if [ -f sql_auth_proxy_versions.json ]; then
               echo "SQL Auth Proxy versions were successfully fetched and saved."
               cat sql_auth_proxy_versions.json
@@ -148,7 +128,7 @@ jobs:
         run: |
           n_minus_1_version="${{ env.N_MINUS_1_VERSION }}"
           versions=$(cat sql_auth_proxy_versions.json)
-          message="Upgrade is available:\n"
+          message="GCP_SQL_AUTH_PROXY_VERSION_CHECK:\n\n"
           update_needed=false
 
           for row in $(echo "${versions}" | jq -r '.[] | @base64'); do
@@ -162,7 +142,7 @@ jobs:
 
               if [ "$current_version" != "$n_minus_1_version" ];then
                   update_needed=true
-                  message="${message}- Instance: $instance\n  Current version: $current_version\n  N-1 version: $n_minus_1_version\n\n"
+                  message="${message}Instance: $instance in $zone is using an outdated Cloud SQL Auth Proxy version ($current_version). N-1 version is $n_minus_1_version.\n"
               else
                   echo "Instance $instance in $zone is using the N-1 version."
               fi
@@ -170,11 +150,10 @@ jobs:
 
           if [ "$update_needed" = true ]; then
               echo "Sending consolidated Slack message"
-              curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}' }" "${{ env.SLACK_WEBHOOK_URL }}"
+              curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}'}" "${{ env.SLACK_WEBHOOK_URL }}"
           else
               echo "All instances are up to date."
           fi
-
 
       - name: Send alert to Slack on job failure
         if: ${{ failure() }}
