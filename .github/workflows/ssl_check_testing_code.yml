@@ -1,4 +1,4 @@
-name: SSL_CERT_EXPIRY
+name: SSL_CERT_EXPIRY_TEST
 
 on:
   workflow_dispatch:
