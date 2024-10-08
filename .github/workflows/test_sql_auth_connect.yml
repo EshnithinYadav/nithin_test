@@ -105,6 +105,8 @@ jobs:
           else
               echo "Warning: No SQL Auth Proxy versions were found for any instance groups."
               echo "[]" > sql_auth_proxy_versions.json
+          fi
+
 
 
 
