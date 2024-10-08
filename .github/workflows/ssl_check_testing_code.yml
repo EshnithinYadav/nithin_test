@@ -41,12 +41,12 @@ jobs:
             echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD_PLAIN }}" >> $GITHUB_ENV
           fi
 
-      - name: Send Slack Alert if setting environment variables failed
-        if: failure() && (matrix.env == 'prod' || matrix.env == 'stage')
-        run: |
-          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-          message="Failed to set environment variables for ${{ env.ENVIRONMENT }} environment."
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
+      # - name: Send Slack Alert if setting environment variables failed
+      #   if: failure() && (matrix.env == 'prod' || matrix.env == 'stage')
+      #   run: |
+      #     webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+      #     message="Failed to set environment variables for ${{ env.ENVIRONMENT }} environment."
+      #     curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
 
       - name: Authenticate to Google Cloud
         run: |
