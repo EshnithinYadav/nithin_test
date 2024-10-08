@@ -125,7 +125,7 @@ jobs:
 
       # Always send alert if the job fails at any step
       - name: Send alert to Slack on job failure
-        if: always()  # This will run regardless of success or failure
+        # if: always()  # This will run regardless of success or failure
         run: |
           if [ "${{ failure() }}" ]; then
             webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
