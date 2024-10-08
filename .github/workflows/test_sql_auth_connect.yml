@@ -42,7 +42,8 @@ jobs:
           environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
           echo "environment=${environment}" >> $GITHUB_ENV
 
-      - name: Fetch Cloud SQL Auth Proxy version based on environment
+    
+      - name: Fetch Cloud SQL Auth Proxy version from active instance templates in prod
         if: matrix.env == 'prod'
         run: |
           fetch_sql_auth_proxy_version_prod() {
@@ -58,8 +59,8 @@ jobs:
                   return 0
               fi
       
-              # Extract version info from the instance template
-              sql_proxy_version=$(gcloud compute instance-templates describe "$instance_template" | Select-String -Pattern 'storage.googleapis.com' | ForEach-Object { $_ -replace '.*v([0-9]+\.[0-9]+\.[0-9]+).*', '$1' })
+              # Extract version info from the instance template using grep and sed
+              sql_proxy_version=$(gcloud compute instance-templates describe "$instance_template" | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
       
               if [ -z "$sql_proxy_version" ]; then
                   echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template for instance group $instance_group. Skipping."
@@ -104,6 +105,7 @@ jobs:
           else
               echo "Warning: No SQL Auth Proxy versions were found for any instance groups."
               echo "[]" > sql_auth_proxy_versions.json
+
 
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
