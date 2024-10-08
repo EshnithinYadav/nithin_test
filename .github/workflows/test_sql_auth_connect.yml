@@ -43,87 +43,68 @@ jobs:
           echo "environment=${environment}" >> $GITHUB_ENV
 
       - name: Fetch Cloud SQL Auth Proxy version based on environment
+        if: matrix.env == 'prod'
         run: |
-          fetch_sql_auth_proxy_version_stage() {
-              local instance_name=$1
-              local zone=$2
-
-              echo "Fetching SQL Auth Proxy version for instance: $instance_name in zone: $zone (stage env)"
-              
-              instance_template=$(gcloud compute instances describe "$instance_name" --zone="$zone" --format="value(template)")
-              if [ -z "$instance_template" ]; then
-                  echo "Warning: No instance template found for instance $instance_name in zone $zone. Skipping."
-                  return 0
-              fi
-
-              template_name=$(basename "$instance_template")
-              template_url="https://www.googleapis.com/compute/v1/projects/${{ env.GCP_PROJECT_ID }}/global/instanceTemplates/$template_name"
-              sql_proxy_version=$(gcloud compute instance-templates describe "$template_url" | grep -i 'st' | sed -E 's/.*\/v([0-9]+\.[0-9]+\.[0-9]+)\/.*/\1/')
-
-              if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template for instance $instance_name in zone $zone. Skipping."
-                  return 0
-              fi
-
-              echo "Instance $instance_name in $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
-              echo "$instance_name,$zone,$sql_proxy_version" >> sql_auth_proxy_versions.txt
-              return 0
-          }
-
           fetch_sql_auth_proxy_version_prod() {
-              local instance_template_url=$1
+              local instance_group=$1
               
-              echo "Fetching SQL Auth Proxy version for instance template: $instance_template_url (prod env)"
+              echo "Fetching SQL Auth Proxy version for instance group: $instance_group (prod env)"
               
-              sql_proxy_version=$(gcloud compute instance-templates describe "$instance_template_url" | grep -i 'st' | sed -E 's/.*\/v([0-9]+\.[0-9]+\.[0-9]+)\/.*/\1/')
-
-              if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template_url. Skipping."
+              # Fetch the instance template URL from the active instance group
+              instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --region="us-east4" --format="value(instanceTemplate)")
+      
+              if [ -z "$instance_template" ]; then
+                  echo "Warning: No active instance template found for instance group $instance_group. Skipping."
                   return 0
               fi
-
-              echo "Template $instance_template_url is using Cloud SQL Auth Proxy version $sql_proxy_version."
-              echo "$instance_template_url,$sql_proxy_version" >> sql_auth_proxy_versions.txt
+      
+              # Extract version info from the instance template
+              sql_proxy_version=$(gcloud compute instance-templates describe "$instance_template" | Select-String -Pattern 'storage.googleapis.com' | ForEach-Object { $_ -replace '.*v([0-9]+\.[0-9]+\.[0-9]+).*', '$1' })
+      
+              if [ -z "$sql_proxy_version" ]; then
+                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template for instance group $instance_group. Skipping."
+                  return 0
+              fi
+      
+              echo "Instance group $instance_group is using Cloud SQL Auth Proxy version $sql_proxy_version."
+              echo "$instance_group,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
           }
-
-          if [ "${{ matrix.env }}" == "stage" ]; then
-              instances_and_zones=$(gcloud compute instances list --filter="name~'cloud-sql-connect|.*-proxy-*'" --format="csv[no-heading](name,zone)")
-              if [ -z "$instances_and_zones" ]; then
-                  echo "Warning: No instances found matching the criteria in stage."
-                  echo "[]" > sql_auth_proxy_versions.json
-                  exit 0
-              fi
-
-              while IFS=, read -r instance_name zone; do
-                  echo "Processing instance: $instance_name in zone: $zone"
-                  fetch_sql_auth_proxy_version_stage "$instance_name" "$zone"
-              done <<< "$instances_and_zones"
-          
-          elif [ "${{ matrix.env }}" == "prod" ]; then
-              templates=$(gcloud compute instance-templates list --filter="name~'cloudsql-auth-template'" --format="csv[no-heading](selfLink)")
-              if [ -z "$templates" ]; then
-                  echo "Warning: No instance templates found matching the criteria in prod."
-                  echo "[]" > sql_auth_proxy_versions.json
-                  exit 0
-              fi
-
-              while IFS=, read -r template_url; do
-                  echo "Processing template: $template_url"
-                  fetch_sql_auth_proxy_version_prod "$template_url"
-              done <<< "$templates"
-          fi
-
-          if [ -f sql_auth_proxy_versions.txt ]; then
-              echo "[" > sql_auth_proxy_versions.json
-              while IFS=, read -r instance_url version; do
-                  echo "  {\"template\": \"$instance_url\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
-              done < sql_auth_proxy_versions.txt
-              sed -i '$ s/,$//' sql_auth_proxy_versions.json
-              echo "]" >> sql_auth_proxy_versions.json
-          else
+      
+          # List all managed instance groups in the prod environment
+          instance_groups=$(gcloud compute instance-groups managed list --filter="region:(us-east4)" --format="csv[no-heading](name)")
+      
+          if [ -z "$instance_groups" ]; then
+              echo "Warning: No active instance groups found in the prod environment."
               echo "[]" > sql_auth_proxy_versions.json
+              exit 0
           fi
+      
+          echo "[" > sql_auth_proxy_versions.json
+      
+          # Loop over the active instance groups and fetch the version info
+          while IFS=, read -r instance_group; do
+              echo "Processing instance group: $instance_group"
+              fetch_sql_auth_proxy_version_prod "$instance_group"
+              
+              if [ $? -eq 0 ] && [ -f sql_auth_proxy_versions.txt ]; then
+                  version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f2)
+                  echo "  {\"instance_group\": \"$instance_group\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
+              else
+                  echo "Skipping instance group $instance_group due to errors or missing version."
+              fi
+          done <<< "$instance_groups"
+      
+          sed -i '$ s/,$//' sql_auth_proxy_versions.json
+          echo "]" >> sql_auth_proxy_versions.json
+      
+          if [ -f sql_auth_proxy_versions.json ]; then
+              echo "SQL Auth Proxy versions were successfully fetched and saved."
+              cat sql_auth_proxy_versions.json
+          else
+              echo "Warning: No SQL Auth Proxy versions were found for any instance groups."
+              echo "[]" > sql_auth_proxy_versions.json
+
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
