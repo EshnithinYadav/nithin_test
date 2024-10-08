@@ -1,4 +1,4 @@
-name: SSL_CERT_EXPIRY_TEST
+name: SSL_CERT_EXPIRY_test
 
 on:
   workflow_dispatch:
@@ -127,7 +127,6 @@ jobs:
           curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message_content'}" "$webhook_url"
 
       - name: Send alert to Slack on job failure
-        if: always()  # This will run regardless of success or failure
         if: ${{ failure() }}
         run: |
           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
