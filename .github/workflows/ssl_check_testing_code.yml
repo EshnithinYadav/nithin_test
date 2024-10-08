@@ -22,18 +22,31 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Set initial environment variables for Slack alerting
+        run: |
+          if [ "${{ matrix.env }}" == "stage" ]; then
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.env }}" == "prod" ]; then
+            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
+          fi
+          echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
+
       - name: Set environment variables
         run: |
           if [ "${{ matrix.env }}" == "stage" ]; then
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
             echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
             echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD_PLAIN }}" >> $GITHUB_ENV
           fi
-          echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
+
+      - name: Send Slack Alert if setting environment variables failed
+        if: failure()
+        run: |
+          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+          message="Failed to set environment variables for ${{ env.ENVIRONMENT }} environment."
+          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
 
       - name: Authenticate to Google Cloud
         run: |
@@ -97,9 +110,9 @@ jobs:
           message_content=$(cat FINAL_MESSAGE.txt)
           curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message_content'}" "$webhook_url"
 
-      - name: Send alert to Slack on job failure
+      - name: Send alert to Slack on job failure for each environment
         if: failure() && env.ENVIRONMENT
         run: |
           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
           message="The SSL certificate expiry check JOB failed for ${{ env.ENVIRONMENT }} environment."
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message'}" "$webhook_url"
+          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
