@@ -35,14 +35,14 @@ jobs:
         run: |
           if [ "${{ matrix.env }}" == "stage" ]; then
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE }}" >> $GITHUB_ENV
+            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD_PLAIN }}" >> $GITHUB_ENV
           fi
 
       - name: Send Slack Alert if setting environment variables failed
-        if: failure()
+        if: failure() && (matrix.env == 'prod' || matrix.env == 'stage')
         run: |
           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
           message="Failed to set environment variables for ${{ env.ENVIRONMENT }} environment."
@@ -90,13 +90,13 @@ jobs:
             days_remaining=$(( (expiry_date - current_date) / (60*60*24) ))
             threshold_days=500
 
-            if [ "$days_remaining" -le "$threshold_days" ]; then
+            if [ "$days_remaining" -le "$threshold_days" ];then
               echo "Domain_name: $dns  Days Remaining: $days_remaining" >> final_message.txt
               certificates_to_notify=true
             fi
           done
 
-          if [ "$certificates_to_notify" = true ]; then
+          if [ "$certificates_to_notify" = true ];then
             echo "certificates_to_notify=true" >> $GITHUB_ENV
             cat final_message.txt > FINAL_MESSAGE.txt
           else
