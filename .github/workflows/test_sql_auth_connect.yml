@@ -83,13 +83,12 @@ jobs:
 
           echo "Fetched zones: $zones"
 
-          # Loop over each zone and list managed instance groups with specific keywords
+          # Loop over each zone and list managed instance groups filtered for SQL Auth Proxy
           for zone in $zones; do
-              # Modify the filter to match keywords related to SQL Auth Proxy
-              instance_groups=$(gcloud compute instance-groups managed list --filter="zone:($zone) AND (name:sql-auth-proxy OR name:sql-auth-connector OR name:cloud-sql-connector)" --format="csv[no-heading](name)")
+              instance_groups=$(gcloud compute instance-groups managed list --filter="name:(sql-auth-proxy* | cloudsql-auth-proxy*)" --format="csv[no-heading](name)")
 
               if [ -z "$instance_groups" ]; then
-                  echo "No relevant instance groups found in zone $zone. Skipping."
+                  echo "No instance groups found in zone $zone. Skipping."
                   continue
               fi
 
@@ -107,7 +106,6 @@ jobs:
           else
               echo "Warning: No SQL Auth Proxy versions were found."
           fi
-
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
