@@ -27,17 +27,18 @@ jobs:
       - name: Set environment variables
         run: |
           if [ "${{ matrix.env }}" == "stage" ]; then
-            # Encode the service account key to base64 format
-            echo "GCP_SERVICE_ACCOUNT_KEY=$(echo '${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}' | base64)" >> $GITHUB_ENV
+            # Encode the service account key to base64 format without wrapping lines
+            echo "GCP_SERVICE_ACCOUNT_KEY=$(echo -n '${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}' | base64 -w0)" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
           elif [ "${{ matrix.env }}" == "prod" ]; then
-            # Encode the service account key to base64 format
-            echo "GCP_SERVICE_ACCOUNT_KEY=$(echo '${{ secrets.GCP_SA_KEY_PROD_PLAIN }}' | base64)" >> $GITHUB_ENV
+            # Encode the service account key to base64 format without wrapping lines
+            echo "GCP_SERVICE_ACCOUNT_KEY=$(echo -n '${{ secrets.GCP_SA_KEY_PROD_PLAIN }}' | base64 -w0)" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
           fi
           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
+
 
 
         
