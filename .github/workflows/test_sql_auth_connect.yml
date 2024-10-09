@@ -43,19 +43,20 @@ jobs:
           echo "environment=${environment}" >> $GITHUB_ENV
 
     
-      - name: Fetch Cloud SQL Auth Proxy version from active instance templates in prod
+      - name: Fetch Cloud SQL Auth Proxy version from active instance templates dynamically by region
         if: matrix.env == 'prod'
         run: |
           fetch_sql_auth_proxy_version_prod() {
               local instance_group=$1
+              local region=$2
               
-              echo "Fetching SQL Auth Proxy version for instance group: $instance_group (prod env)"
+              echo "Fetching SQL Auth Proxy version for instance group: $instance_group in region: $region"
               
               # Fetch the instance template URL from the active instance group
-              instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --region="us-east4" --format="value(instanceTemplate)")
+              instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --region="$region" --format="value(instanceTemplate)")
       
               if [ -z "$instance_template" ]; then
-                  echo "Warning: No active instance template found for instance group $instance_group. Skipping."
+                  echo "Warning: No active instance template found for instance group $instance_group in region $region. Skipping."
                   return 0
               fi
       
@@ -63,51 +64,43 @@ jobs:
               sql_proxy_version=$(gcloud compute instance-templates describe "$instance_template" | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
       
               if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template for instance group $instance_group. Skipping."
+                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template for instance group $instance_group in region $region. Skipping."
                   return 0
               fi
       
-              echo "Instance group $instance_group is using Cloud SQL Auth Proxy version $sql_proxy_version."
-              echo "$instance_group,$sql_proxy_version" >> sql_auth_proxy_versions.txt
+              echo "Instance group $instance_group in region $region is using Cloud SQL Auth Proxy version $sql_proxy_version."
+              echo "$instance_group,$region,$sql_proxy_version" >> sql_auth_proxy_versions.txt
               return 0
           }
       
-          # List all managed instance groups in the prod environment
-          instance_groups=$(gcloud compute instance-groups managed list --filter="region:(us-east4)" --format="csv[no-heading](name)")
-      
-          if [ -z "$instance_groups" ]; then
-              echo "Warning: No active instance groups found in the prod environment."
-              echo "[]" > sql_auth_proxy_versions.json
-              exit 0
-          fi
-      
-          echo "[" > sql_auth_proxy_versions.json
-      
-          # Loop over the active instance groups and fetch the version info
-          while IFS=, read -r instance_group; do
-              echo "Processing instance group: $instance_group"
-              fetch_sql_auth_proxy_version_prod "$instance_group"
+          # Fetch all regions with active managed instance groups
+          regions=$(gcloud compute regions list --format="csv[no-heading](name)")
+          
+          echo "Fetched regions: $regions"
+          
+          # Loop over each region and list managed instance groups
+          for region in $regions; do
+              instance_groups=$(gcloud compute instance-groups managed list --filter="region:($region)" --format="csv[no-heading](name)")
               
-              if [ $? -eq 0 ] && [ -f sql_auth_proxy_versions.txt ]; then
-                  version=$(tail -n1 sql_auth_proxy_versions.txt | cut -d',' -f2)
-                  echo "  {\"instance_group\": \"$instance_group\", \"version\": \"$version\"}," >> sql_auth_proxy_versions.json
-              else
-                  echo "Skipping instance group $instance_group due to errors or missing version."
+              if [ -z "$instance_groups" ]; then
+                  echo "No instance groups found in region $region. Skipping."
+                  continue
               fi
-          done <<< "$instance_groups"
-      
-          sed -i '$ s/,$//' sql_auth_proxy_versions.json
-          echo "]" >> sql_auth_proxy_versions.json
-      
-          if [ -f sql_auth_proxy_versions.json ]; then
-              echo "SQL Auth Proxy versions were successfully fetched and saved."
-              cat sql_auth_proxy_versions.json
+              
+              # Loop over each instance group and fetch version info
+              while IFS=, read -r instance_group; do
+                  echo "Processing instance group: $instance_group in region: $region"
+                  fetch_sql_auth_proxy_version_prod "$instance_group" "$region"
+              done <<< "$instance_groups"
+          done
+          
+          # Post-process the versions
+          if [ -f sql_auth_proxy_versions.txt ]; then
+              echo "SQL Auth Proxy versions were successfully fetched."
+              cat sql_auth_proxy_versions.txt
           else
-              echo "Warning: No SQL Auth Proxy versions were found for any instance groups."
-              echo "[]" > sql_auth_proxy_versions.json
+              echo "Warning: No SQL Auth Proxy versions were found."
           fi
-
-
 
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
