@@ -54,6 +54,12 @@ jobs:
               
               echo "Fetching SQL Auth Proxy version for instance group: $instance_group in zone: $zone"
               
+              # Check if zone is not empty
+              if [ -z "$zone" ]; then
+                  echo "Warning: Zone is empty for instance group $instance_group. Skipping."
+                  return 0
+              fi
+              
               # Fetch the instance template URL from the active instance group
               instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --zone="$zone" --format="value(instanceTemplate)")
           
@@ -96,6 +102,7 @@ jobs:
               echo "Processing instance group: $instance_group in zone: $zone"
               fetch_sql_auth_proxy_version "$instance_group" "$zone"
           done <<< "$instance_groups"
+
 
           # Post-process the versions
           if [ -f sql_auth_proxy_versions.json ]; then
