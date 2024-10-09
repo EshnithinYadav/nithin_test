@@ -42,7 +42,7 @@ jobs:
           environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
           echo "environment=${environment}" >> $GITHUB_ENV
 
-      - name: Fetch Cloud SQL Auth Proxy version from instance groups dynamically
+      - name: Fetch Cloud SQL Auth Proxy version from active instance templates dynamically by zone
         run: |
           # Initialize an empty JSON array
           echo "[]" > sql_auth_proxy_versions.json
@@ -53,12 +53,6 @@ jobs:
               local zone=$2
               
               echo "Fetching SQL Auth Proxy version for instance group: $instance_group in zone: $zone"
-              
-              # Check if zone is not empty
-              if [ -z "$zone" ]; then
-                  echo "Warning: Zone is empty for instance group $instance_group. Skipping."
-                  return 0
-              fi
               
               # Fetch the instance template URL from the active instance group
               instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --zone="$zone" --format="value(instanceTemplate)")
@@ -84,26 +78,28 @@ jobs:
               return 0
           }
           
-          # Fetch all zones
+          # Fetch all zones with active managed instance groups
           zones=$(gcloud compute zones list --format="csv[no-heading](name)")
 
           echo "Fetched zones: $zones"
 
-          # Fetch instance groups filtered by name for the current environment
-          instance_groups=$(gcloud compute instance-groups managed list --filter="name:sql-auth-proxy" --format="csv[no-heading](name,zone)")
+          # Loop over each zone and list managed instance groups with specific keywords
+          for zone in $zones; do
+              # Modify the filter to match keywords related to SQL Auth Proxy
+              instance_groups=$(gcloud compute instance-groups managed list --filter="zone:($zone) AND (name:sql-auth-proxy OR name:sql-auth-connector OR name:cloud-sql-connector)" --format="csv[no-heading](name)")
 
-          if [ -z "$instance_groups" ]; then
-              echo "No instance groups found with 'sql auth proxy' in their names. Exiting."
-              exit 0
-          fi
+              if [ -z "$instance_groups" ]; then
+                  echo "No relevant instance groups found in zone $zone. Skipping."
+                  continue
+              fi
 
-          # Loop over each instance group and fetch version info
-          while IFS=, read -r instance_group zone; do
-              echo "Processing instance group: $instance_group in zone: $zone"
-              fetch_sql_auth_proxy_version "$instance_group" "$zone"
-          done <<< "$instance_groups"
-
-
+              # Loop over each instance group and fetch version info
+              while IFS=, read -r instance_group; do
+                  echo "Processing instance group: $instance_group in zone: $zone"
+                  fetch_sql_auth_proxy_version "$instance_group" "$zone"
+              done <<< "$instance_groups"
+          done
+          
           # Post-process the versions
           if [ -f sql_auth_proxy_versions.json ]; then
               echo "SQL Auth Proxy versions were successfully fetched."
@@ -111,6 +107,7 @@ jobs:
           else
               echo "Warning: No SQL Auth Proxy versions were found."
           fi
+
 
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
