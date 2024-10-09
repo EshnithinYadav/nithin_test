@@ -42,23 +42,23 @@ jobs:
           environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
           echo "environment=${environment}" >> $GITHUB_ENV
 
-      - name: Fetch Cloud SQL Auth Proxy version from active instance templates dynamically by region
+      - name: Fetch Cloud SQL Auth Proxy version from active instance templates dynamically by zone
         run: |
           # Initialize an empty JSON array
           echo "[]" > sql_auth_proxy_versions.json
           
-          # Function to fetch the version for each instance group and region
-          fetch_sql_auth_proxy_version_prod() {
+          # Function to fetch the version for each instance group and zone
+          fetch_sql_auth_proxy_version() {
               local instance_group=$1
-              local region=$2
+              local zone=$2
               
-              echo "Fetching SQL Auth Proxy version for instance group: $instance_group in region: $region"
+              echo "Fetching SQL Auth Proxy version for instance group: $instance_group in zone: $zone"
               
               # Fetch the instance template URL from the active instance group
-              instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --region="$region" --format="value(instanceTemplate)")
+              instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --zone="$zone" --format="value(instanceTemplate)")
           
               if [ -z "$instance_template" ]; then
-                  echo "Warning: No active instance template found for instance group $instance_group in region $region. Skipping."
+                  echo "Warning: No active instance template found for instance group $instance_group in zone $zone. Skipping."
                   return 0
               fi
           
@@ -66,40 +66,36 @@ jobs:
               sql_proxy_version=$(gcloud compute instance-templates describe "$instance_template" | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
           
               if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template for instance group $instance_group in region $region. Skipping."
+                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template for instance group $instance_group in zone $zone. Skipping."
                   return 0
               fi
           
-              echo "Instance group $instance_group in region $region is using Cloud SQL Auth Proxy version $sql_proxy_version."
+              echo "Instance group $instance_group in zone $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
           
-              # Append the instance group, region, and version to the JSON file
-              jq --arg instance_group "$instance_group" --arg region "$region" --arg version "$sql_proxy_version" \
-              '. += [{"instance_group": $instance_group, "region": $region, "version": $version}]' sql_auth_proxy_versions.json > tmp.json && mv tmp.json sql_auth_proxy_versions.json
+              # Append the instance group, zone, and version to the JSON file
+              jq --arg instance_group "$instance_group" --arg zone "$zone" --arg version "$sql_proxy_version" \
+              '. += [{"instance_group": $instance_group, "zone": $zone, "version": $version}]' sql_auth_proxy_versions.json > tmp.json && mv tmp.json sql_auth_proxy_versions.json
               return 0
           }
           
-          # Fetch all regions with active managed instance groups
-          regions=$(gcloud compute regions list --format="csv[no-heading](name)")
-          
-          echo "Fetched regions: $regions"
-          
-          # Loop over each region and list managed instance groups
-          for region in $regions; do
-              echo "Checking region: $region"
-              
-              instance_groups=$(gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --filter="region:($region)" --format="csv[no-heading](name)")
-              
-              echo "Instance groups in region $region: $instance_groups"
-              
+          # Fetch all zones with active managed instance groups
+          zones=$(gcloud compute zones list --format="csv[no-heading](name)")
+
+          echo "Fetched zones: $zones"
+
+          # Loop over each zone and list managed instance groups
+          for zone in $zones; do
+              instance_groups=$(gcloud compute instance-groups managed list --filter="zone:($zone)" --format="csv[no-heading](name)")
+
               if [ -z "$instance_groups" ]; then
-                  echo "No instance groups found in region $region. Skipping."
+                  echo "No instance groups found in zone $zone. Skipping."
                   continue
               fi
-              
+
               # Loop over each instance group and fetch version info
               while IFS=, read -r instance_group; do
-                  echo "Processing instance group: $instance_group in region: $region"
-                  fetch_sql_auth_proxy_version_prod "$instance_group" "$region"
+                  echo "Processing instance group: $instance_group in zone: $zone"
+                  fetch_sql_auth_proxy_version "$instance_group" "$zone"
               done <<< "$instance_groups"
           done
           
