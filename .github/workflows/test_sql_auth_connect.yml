@@ -80,14 +80,13 @@ jobs:
               return 0
           }
           
-          # Fetch all regions with active managed instance groups
-          regions=$(gcloud compute regions list --format="csv[no-heading](name)")
-          
-          echo "Fetched regions: $regions"
-          
           # Loop over each region and list managed instance groups
           for region in $regions; do
-              instance_groups=$(gcloud compute instance-groups managed list --filter="region:($region)" --format="csv[no-heading](name)")
+              echo "Checking region: $region"
+              
+              instance_groups=$(gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --filter="region:($region)" --format="csv[no-heading](name)")
+              
+              echo "Instance groups in region $region: $instance_groups"
               
               if [ -z "$instance_groups" ]; then
                   echo "No instance groups found in region $region. Skipping."
@@ -100,6 +99,7 @@ jobs:
                   fetch_sql_auth_proxy_version_prod "$instance_group" "$region"
               done <<< "$instance_groups"
           done
+
           
           # Post-process the versions
           if [ -f sql_auth_proxy_versions.json ]; then
