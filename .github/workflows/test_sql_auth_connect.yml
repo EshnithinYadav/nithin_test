@@ -84,7 +84,7 @@ jobs:
           echo "Fetched zones: $zones"
 
           # Fetch instance groups filtered by name for the current environment
-          instance_groups=$(gcloud compute instance-groups managed list --filter="name:('*sql auth proxy*')" --format="csv[no-heading](name,zone)")
+          instance_groups=$(gcloud compute instance-groups managed list --filter="name:sql-auth-proxy" --format="csv[no-heading](name,zone)")
 
           if [ -z "$instance_groups" ]; then
               echo "No instance groups found with 'sql auth proxy' in their names. Exiting."
