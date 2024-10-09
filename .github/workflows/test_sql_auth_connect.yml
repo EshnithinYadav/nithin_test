@@ -138,16 +138,18 @@ jobs:
               _jq() {
                   echo ${row} | base64 --decode | jq -r ${1}
               }
-      
-              template=$(_jq '.template')
+          
+              # Using instance_group instead of template
+              template=$(_jq '.instance_group')
               current_version=$(_jq '.version')
-      
+          
               # Compare the current version with the N-1 version
               if [ "$current_version" != "$n_minus_1_version" ]; then
                   update_needed=true
-                  message="${message}Template: $template is using an outdated Cloud SQL Auth Proxy version ($current_version). N-1 version is $n_minus_1_version.\n"
+                  message="${message}Instance group: $template is using an outdated Cloud SQL Auth Proxy version ($current_version). N-1 version is $n_minus_1_version.\n"
               fi
           done
+
       
           # Send Slack message if update is needed
           if [ "$update_needed" = true ]; then
