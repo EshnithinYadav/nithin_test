@@ -42,9 +42,7 @@ jobs:
           environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
           echo "environment=${environment}" >> $GITHUB_ENV
 
-    
       - name: Fetch Cloud SQL Auth Proxy version from active instance templates dynamically by region
-        # if: matrix.env == 'prod'
         run: |
           # Initialize an empty JSON array
           echo "[]" > sql_auth_proxy_versions.json
@@ -80,6 +78,11 @@ jobs:
               return 0
           }
           
+          # Fetch all regions with active managed instance groups
+          regions=$(gcloud compute regions list --format="csv[no-heading](name)")
+          
+          echo "Fetched regions: $regions"
+          
           # Loop over each region and list managed instance groups
           for region in $regions; do
               echo "Checking region: $region"
@@ -99,7 +102,6 @@ jobs:
                   fetch_sql_auth_proxy_version_prod "$instance_group" "$region"
               done <<< "$instance_groups"
           done
-
           
           # Post-process the versions
           if [ -f sql_auth_proxy_versions.json ]; then
@@ -109,7 +111,6 @@ jobs:
               echo "Warning: No SQL Auth Proxy versions were found."
           fi
 
-          
       - name: Fetch the latest Cloud SQL Auth Proxy version
         id: get_latest_version
         run: |
@@ -150,7 +151,6 @@ jobs:
               fi
           done
 
-      
           # Send Slack message if update is needed
           if [ "$update_needed" = true ]; then
               echo "Sending consolidated Slack message"
