@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [prod]
+        env: [stage, prod]
 
     steps:
       - name: Checkout repository
@@ -44,7 +44,7 @@ jobs:
 
     
       - name: Fetch Cloud SQL Auth Proxy version from active instance templates dynamically by region
-        if: matrix.env == 'prod'
+        # if: matrix.env == 'prod'
         run: |
           # Initialize an empty JSON array
           echo "[]" > sql_auth_proxy_versions.json
