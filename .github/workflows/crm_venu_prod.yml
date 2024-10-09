@@ -130,7 +130,8 @@ jobs:
           curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message_content'}" "$webhook_url"
 
       - name: Send alert to Slack on job failure
-        if: ${{ failure() }}
+        # if: ${{ failure() }}
+        if: failure() && env.ENVIRONMENT
         run: |
           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
           message="The SSL certificate expiry check JOB failed for ${{ env.ENVIRONMENT }} environment."
