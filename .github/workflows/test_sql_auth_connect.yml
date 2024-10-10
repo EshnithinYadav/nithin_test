@@ -123,12 +123,10 @@ jobs:
           echo "N-1 version is: $n_minus_one_version"
 
           # Initialize an empty array to hold version update messages
-          update_messages=()
+          update_available="No"
 
           # Loop through instance groups to compare versions
           while IFS=$'\t' read -r instance_group _; do
-            echo "Processing instance group: $instance_group"
-            
             current_version=$(grep -oP '\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt || echo "N/A")
             
             if [ "$current_version" = "N/A" ]; then
@@ -137,26 +135,17 @@ jobs:
             fi
             
             if [[ "$n_minus_one_version" != "$current_version" ]]; then
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: Yes")
-            else
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: No")
+                update_available="Yes"
+                break  # Exit loop after finding at least one update available
             fi
             
           done < instance_groups.txt
 
-          # Check if there are any messages to send
-          if [ ${#update_messages[@]} -eq 0 ]; then
-            echo "No updates available for SQL Auth Proxy."
-            echo "No alert to send for ${{ matrix.environment }}."
-          else
-            # Write all update messages to the file
-            {
-              echo "GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):"
-              for message in "${update_messages[@]}"; do
-                echo -e "$message"
-              done
-            } > proxy_version_${{ matrix.environment }}.txt
-          fi
+          # Prepare the single output message
+          message="The current version of GCP SQL Auth Proxy is:\n*Version*: $latest_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: $update_available\n"
+
+          # Write message to file
+          echo -e "$message" > proxy_version_${{ matrix.environment }}.txt
 
       - name: Send Slack Alert
         run: |
