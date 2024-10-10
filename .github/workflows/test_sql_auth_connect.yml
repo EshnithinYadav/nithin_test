@@ -55,6 +55,14 @@ jobs:
               continue
             fi
             
+            # Trim whitespace from location
+            location=$(echo "$location" | xargs)
+
+            if [[ -z "$location" ]]; then
+              echo "Error: Location for instance group $instance_group is empty."
+              continue
+            fi
+            
             if [[ $location == *"-a" ]]; then
               # Zonal instance group
               echo "Processing zonal instance group: $instance_group in zone: $location"
@@ -65,6 +73,7 @@ jobs:
               flag="--region=$location"
             fi
             
+            # Describe the instance group
             instance_template=$(gcloud compute instance-groups managed describe "$instance_group" $flag --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
 
             if [ -z "$instance_template" ]; then
@@ -72,6 +81,7 @@ jobs:
               continue
             fi
 
+            # Fetch the SQL Proxy version
             version=$(gcloud compute instance-templates describe "$instance_template" --format="get(properties.metadata.items)" | grep -oP 'cloud-sql-proxy/v\K[0-9]+\.[0-9]+\.[0-9]+')
 
             if [ -z "$version" ]; then
@@ -82,6 +92,7 @@ jobs:
             echo "*Instance Group*: $instance_group" >> proxy_version_${{ matrix.environment }}.txt
             echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
+
 
       - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
