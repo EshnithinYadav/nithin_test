@@ -55,6 +55,11 @@ jobs:
               continue
             fi
             
+            if [ -z "$location" ]; then
+              echo "Error: Location for instance group $instance_group is empty."
+              continue
+            fi
+            
             echo "Processing instance group: $instance_group in location: $location"
             
             # Determine if the instance group is zonal or regional
