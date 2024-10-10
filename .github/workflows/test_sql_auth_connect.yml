@@ -43,24 +43,32 @@ jobs:
 
       - name: Fetch SQL Auth Proxy Version
         run: |
-          # Fetch instance groups and check if the file is created
-          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, location)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
+          # Fetch instance groups along with their scope and location
+          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, scope, location)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
+          
           if [ ! -s instance_groups.txt ]; then
             echo "No SQL Auth Proxy instance groups found."
             exit 1
           fi
 
           # Read the instance groups and process each one
-          while IFS=',' read -r instance_group location; do
+          while IFS=$'\t' read -r instance_group scope location; do
             if [ -z "$instance_group" ]; then
               echo "Error: Instance group is empty."
               exit 1
             fi
             
-            echo "Processing instance group: $instance_group in location: $location"
+            echo "Processing instance group: $instance_group in location: $location with scope: $scope"
+            
+            # Set the correct flag based on whether the instance group is regional or zonal
+            if [[ "$scope" == "region" ]]; then
+              flag="--region=$location"
+            else
+              flag="--zone=$location"
+            fi
             
             # Describe the instance group with the correct region or zone
-            instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --region="$location" --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
+            instance_template=$(gcloud compute instance-groups managed describe "$instance_group" $flag --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
 
             if [ -z "$instance_template" ]; then
               echo "Error: Instance template for $instance_group not found."
@@ -79,6 +87,7 @@ jobs:
             echo "*Instance Group*: $instance_group" > proxy_version_${{ matrix.environment }}.txt
             echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
+
 
 
 
