@@ -1,162 +1,81 @@
-name: test GCP Cloud SQL Auth Proxy Version Check and Send Slack Alerts
+name: GCP SQL Auth Proxy Version Check and Slack Alerts
 
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * 1'  # Runs every Monday at 12:00 PM UTC
+  workflow_dispatch:  # Allows manual triggering of the workflow
 
 jobs:
-  GCP_SQL_Auth_Proxy_Version_Check:
+  GCP-SQL-Auth-Proxy-Version-Check:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [stage, prod]
-
+        environment: [prod]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Set environment variables for prod
+        run: |
+          echo "Setting environment variables for prod..."
+          echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
+          echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
+      
+      - name: Google Auth
+        uses: 'google-github-actions/auth@v2'
         with:
-          version: 'latest'
+          credentials_json: ${{ secrets.GCP_SA_KEY_PROD_PLAIN }}
 
-      - name: Set environment variables
+      - name: Setup Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Fetch Active SQL Auth Proxy Instance Groups
+        id: fetch_instance_groups
         run: |
-          if [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD }}" >> $GITHUB_ENV
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
+          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
+          if [ ! -s instance_groups.txt ]; then
+            echo "No SQL Auth Proxy instance groups found."
+            exit 1
           fi
+          cat instance_groups.txt
 
-      - name: Authenticate to Google Cloud
+      - name: Fetch SQL Auth Proxy Version
         run: |
-          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-          gcloud config set project ${{ env.GCP_PROJECT_ID }}
+          while read instance_group; do
+            instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
+            version=$(gcloud compute instance-templates describe "$instance_template" --format="get(properties.metadata.items)" | grep -oP 'cloud-sql-proxy/v\K[0-9]+\.[0-9]+\.[0-9]+')
+            echo "*Instance Group*: $instance_group" > proxy_version_${{ matrix.environment }}.txt
+            echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
+          done < instance_groups.txt
 
-      - name: Capitalize the environment name
+      - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
-          environment=$(echo ${{ matrix.env }} | tr '[:lower:]' '[:upper:]')
-          echo "environment=${environment}" >> $GITHUB_ENV
-
-      - name: Fetch Cloud SQL Auth Proxy version from active instance templates dynamically by zone
-        run: |
-          # Initialize an empty JSON array
-          echo "[]" > sql_auth_proxy_versions.json
+          latest_version=$(curl --silent "https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          current_version=$(grep -oP 'Version: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt)
           
-          # Function to fetch the version for each instance group and zone
-          fetch_sql_auth_proxy_version() {
-              local instance_group=$1
-              local zone=$2
-              
-              echo "Fetching SQL Auth Proxy version for instance group: $instance_group in zone: $zone"
-              
-              # Fetch the instance template URL from the active instance group
-              instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --zone="$zone" --format="value(instanceTemplate)")
-          
-              if [ -z "$instance_template" ]; then
-                  echo "Warning: No active instance template found for instance group $instance_group in zone $zone. Skipping."
-                  return 0
-              fi
-          
-              # Extract version info from the instance template using grep and sed
-              sql_proxy_version=$(gcloud compute instance-templates describe "$instance_template" | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
-          
-              if [ -z "$sql_proxy_version" ]; then
-                  echo "Warning: Could not extract Cloud SQL Auth Proxy version from template $instance_template for instance group $instance_group in zone $zone. Skipping."
-                  return 0
-              fi
-          
-              echo "Instance group $instance_group in zone $zone is using Cloud SQL Auth Proxy version $sql_proxy_version."
-          
-              # Append the instance group, zone, and version to the JSON file
-              jq --arg instance_group "$instance_group" --arg zone "$zone" --arg version "$sql_proxy_version" \
-              '. += [{"instance_group": $instance_group, "zone": $zone, "version": $version}]' sql_auth_proxy_versions.json > tmp.json && mv tmp.json sql_auth_proxy_versions.json
-              return 0
-          }
-          
-          # Fetch all zones with active managed instance groups
-          zones=$(gcloud compute zones list --format="csv[no-heading](name)")
-
-          echo "Fetched zones: $zones"
-
-          # Loop over each zone and list managed instance groups filtered for SQL Auth Proxy
-          for zone in $zones; do
-              instance_groups=$(gcloud compute instance-groups managed list --filter="name:(sql-auth-proxy* | cloudsql-auth-proxy*)" --format="csv[no-heading](name)")
-
-              if [ -z "$instance_groups" ]; then
-                  echo "No instance groups found in zone $zone. Skipping."
-                  continue
-              fi
-
-              # Loop over each instance group and fetch version info
-              while IFS=, read -r instance_group; do
-                  echo "Processing instance group: $instance_group in zone: $zone"
-                  fetch_sql_auth_proxy_version "$instance_group" "$zone"
-              done <<< "$instance_groups"
-          done
-          
-          # Post-process the versions
-          if [ -f sql_auth_proxy_versions.json ]; then
-              echo "SQL Auth Proxy versions were successfully fetched."
-              cat sql_auth_proxy_versions.json
+          if [[ "$latest_version" != "$current_version" ]]; then
+            echo "*Latest Version*: $latest_version" >> proxy_version_${{ matrix.environment }}.txt
+            echo "*Update Available*: Yes" >> proxy_version_${{ matrix.environment }}.txt
           else
-              echo "Warning: No SQL Auth Proxy versions were found."
+            echo "SQL Auth Proxy is up to date." >> proxy_version_${{ matrix.environment }}.txt
           fi
-
-      - name: Fetch the latest Cloud SQL Auth Proxy version
-        id: get_latest_version
+          
+      - name: Send Slack Alert
         run: |
-          latest_version=$(curl -s https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest | jq -r '.tag_name')
-          IFS='.' read -r major minor patch <<< "$(echo $latest_version | sed 's/v//')"
-
-          if [ "$minor" -gt 0 ]; then
-            n_minus_1_version="v${major}.$((minor - 1)).0"
+          if [ -f proxy_version_${{ matrix.environment }}.txt ]; then
+            message=$(cat proxy_version_${{ matrix.environment }}.txt)
+            curl -X POST -H 'Content-type: application/json' --data "{
+              'text': 'GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):\n\n$message'
+            }" "${{ env.SLACK_WEBHOOK_URL }}"
           else
-            n_minus_1_version="v$((major - 1)).X.X"
-          fi
-
-          echo "Latest Cloud SQL Auth Proxy version: $latest_version"
-          echo "N-1 version: $n_minus_1_version"
-          echo "N_MINUS_1_VERSION=$n_minus_1_version" >> $GITHUB_ENV
-
-      - name: Compare versions and send consolidated Slack alerts
-        run: |
-          n_minus_1_version="${{ env.N_MINUS_1_VERSION }}"
-          versions=$(cat sql_auth_proxy_versions.json)
-          message="GCP_SQL_AUTH_PROXY_VERSION_CHECK:\n\n"
-          update_needed=false
+            echo "No alert to send for ${{ matrix.environment }}."
       
-          # Loop through the versions using jq
-          for row in $(echo "${versions}" | jq -r '.[] | @base64'); do
-              _jq() {
-                  echo ${row} | base64 --decode | jq -r ${1}
-              }
-          
-              # Using instance_group instead of template
-              template=$(_jq '.instance_group')
-              current_version=$(_jq '.version')
-          
-              # Compare the current version with the N-1 version
-              if [ "$current_version" != "$n_minus_1_version" ]; then
-                  update_needed=true
-                  message="${message}Instance group: $template is using an outdated Cloud SQL Auth Proxy version ($current_version). N-1 version is $n_minus_1_version.\n"
-              fi
-          done
-
-          # Send Slack message if update is needed
-          if [ "$update_needed" = true ]; then
-              echo "Sending consolidated Slack message"
-              curl -X POST -H 'Content-type: application/json' --data "{ 'text': '${message}'}" "${{ env.SLACK_WEBHOOK_URL }}"
-          else
-              echo "All templates are up to date."
-          fi
-      
+      # Send alert to Slack on job failure
       - name: Send alert to Slack on job failure
-        if: ${{ failure() }}
+        if: failure()
         run: |
-          message="The workflow for Cloud SQL Auth Proxy version check failed in the ${{ env.environment }} environment."
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'GCP_SQL_AUTH_PROXY_VERSION_CHECK:\n\n$message'}" "${{ env.SLACK_WEBHOOK_URL }}"
+          curl -X POST -H 'Content-type: application/json' --data "{
+            'text': 'GCP SQL AUTH PROXY VERSION CHECK:\n\nThe workflow for ${{ matrix.environment }} failed.'
+          }" "${{ env.SLACK_WEBHOOK_URL }}"
