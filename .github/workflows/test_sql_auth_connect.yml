@@ -101,22 +101,26 @@ jobs:
 
       - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
-          echo "Fetching latest version from GitHub..."
-          response=$(curl --silent --fail "https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest")
+          echo "Fetching all versions from GitHub..."
+          response=$(curl --silent --fail "https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases")
           
           if [ $? -ne 0 ]; then
-              echo "Error: Failed to fetch the latest version from GitHub."
+              echo "Error: Failed to fetch versions from GitHub."
               exit 1
           fi
 
-          latest_version=$(echo "$response" | jq -r .tag_name 2>/dev/null | sed 's/^v//')
-          
-          if [ -z "$latest_version" ]; then
-              echo "Error: No latest version found in GitHub response."
+          # Extract version tags and get the latest two
+          versions=$(echo "$response" | jq -r '.[].tag_name | select(. | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | sed 's/^v//')
+          latest_version=$(echo "$versions" | sort -V | tail -n 1)
+          n_minus_one_version=$(echo "$versions" | sort -V | head -n -1 | tail -n 1)
+
+          if [ -z "$latest_version" ] || [ -z "$n_minus_one_version" ]; then
+              echo "Error: Could not determine the latest or N-1 version."
               exit 1
           fi
           
           echo "Latest version is: $latest_version"
+          echo "N-1 version is: $n_minus_one_version"
 
           # Initialize an empty array to hold version update messages
           update_messages=()
@@ -132,10 +136,10 @@ jobs:
                 continue
             fi
             
-            if [[ "$latest_version" != "$current_version" ]]; then
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest Version*: $latest_version\n*Update Available*: Yes")
+            if [[ "$n_minus_one_version" != "$current_version" ]]; then
+                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: Yes")
             else
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest Version*: $latest_version\n*Update Available*: No")
+                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: No")
             fi
             
           done < instance_groups.txt
