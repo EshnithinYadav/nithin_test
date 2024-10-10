@@ -109,7 +109,8 @@ jobs:
           
           echo "Latest version is: $latest_version"
 
-          current_version=$(grep -oP 'Version: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt || echo "N/A")
+          # Adjusted version extraction logic
+          current_version=$(grep -oP '\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt || echo "N/A")
           echo "Current version fetched from file: $current_version"  # Debug output
           
           if [ "$current_version" = "N/A" ]; then
@@ -123,6 +124,7 @@ jobs:
           else
             echo "SQL Auth Proxy is up to date." >> proxy_version_${{ matrix.environment }}.txt
           fi
+
           
       - name: Send Slack Alert
         run: |
