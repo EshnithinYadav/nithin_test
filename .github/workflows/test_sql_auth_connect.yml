@@ -44,11 +44,20 @@ jobs:
       - name: Fetch SQL Auth Proxy Version
         run: |
           while read instance_group; do
-            instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
+            # Get the location (region or zone) of the instance group
+            location=$(gcloud compute instance-groups managed list --filter="name=$instance_group" --format="value(location)" --project="${{ env.GCP_PROJECT_ID }}")
+
+            # Describe the instance group with the correct region or zone
+            instance_template=$(gcloud compute instance-groups managed describe "$instance_group" --region="$location" --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
+            
+            # Fetch the SQL Auth Proxy version from the instance template
             version=$(gcloud compute instance-templates describe "$instance_template" --format="get(properties.metadata.items)" | grep -oP 'cloud-sql-proxy/v\K[0-9]+\.[0-9]+\.[0-9]+')
+
+            # Write the information to a file for Slack notification
             echo "*Instance Group*: $instance_group" > proxy_version_${{ matrix.environment }}.txt
             echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
+
 
       - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
