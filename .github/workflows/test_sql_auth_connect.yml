@@ -43,8 +43,8 @@ jobs:
 
       - name: Fetch SQL Auth Proxy Version
         run: |
-          # Fetch instance groups along with their scope and location
-          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, scope, location)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
+          # Fetch instance groups (names only)
+          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
           
           # Check if the file is created and has content
           if [ ! -s instance_groups.txt ]; then
@@ -57,24 +57,30 @@ jobs:
           cat instance_groups.txt
           
           # Read the instance groups and process each one
-          while IFS=$'\t' read -r instance_group scope location; do
+          while IFS= read -r instance_group; do
             if [ -z "$instance_group" ]; then
               echo "Error: Instance group is empty."
               exit 1
             fi
             
-            if [ -z "$location" ] || [ -z "$scope" ]; then
-              echo "Error: Missing location or scope for instance group: $instance_group"
+            echo "Processing instance group: $instance_group"
+            
+            # Fetch the scope and location dynamically by describing the instance group
+            scope_location=$(gcloud compute instance-groups managed describe "$instance_group" --project="${{ env.GCP_PROJECT_ID }}" --format="value(region,zone)")
+
+            # Split the output into region and zone (one will be empty)
+            region=$(echo "$scope_location" | awk '{print $1}')
+            zone=$(echo "$scope_location" | awk '{print $2}')
+
+            if [ -n "$region" ]; then
+              flag="--region=$region"
+              echo "Instance group is regional, located in: $region"
+            elif [ -n "$zone" ]; then
+              flag="--zone=$zone"
+              echo "Instance group is zonal, located in: $zone"
+            else:
+              echo "Error: Could not determine the scope (region/zone) for instance group $instance_group."
               exit 1
-            fi
-            
-            echo "Processing instance group: $instance_group in location: $location with scope: $scope"
-            
-            # Set the correct flag based on whether the instance group is regional or zonal
-            if [[ "$scope" == "region" ]]; then
-              flag="--region=$location"
-            else
-              flag="--zone=$location"
             fi
             
             # Describe the instance group with the correct region or zone
@@ -97,6 +103,7 @@ jobs:
             echo "*Instance Group*: $instance_group" > proxy_version_${{ matrix.environment }}.txt
             echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
+
 
 
 
