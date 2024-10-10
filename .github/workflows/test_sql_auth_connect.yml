@@ -1,4 +1,3 @@
-
 name: GCP SQL Auth Proxy Version Check and Slack Alerts
 
 on:
@@ -40,15 +39,6 @@ jobs:
       - name: Fetch Active SQL Auth Proxy Instance Groups
         id: fetch_instance_groups
         run: |
-          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
-          if [ ! -s instance_groups.txt ]; then
-            echo "No SQL Auth Proxy instance groups found."
-            exit 1
-          fi
-          cat instance_groups.txt
-
-      - name: Fetch SQL Auth Proxy Version
-        run: |
           gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, region)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
           if [ ! -s instance_groups.txt ]; then
             echo "No SQL Auth Proxy instance groups found."
@@ -56,31 +46,40 @@ jobs:
           fi
           echo "Instance groups fetched:"
           cat instance_groups.txt
-          
-          while IFS=$'\t' read -r instance_group region; do
+
+      - name: Fetch SQL Auth Proxy Version
+        run: |
+          while IFS=$'\t' read -r instance_group location; do
             if [ -z "$instance_group" ]; then
               echo "Error: Instance group is empty."
-              exit 1
+              continue
             fi
             
-            echo "Processing instance group: $instance_group in region: $region"
+            if [[ $location == *"-a" ]]; then
+              # Zonal instance group
+              echo "Processing zonal instance group: $instance_group in zone: $location"
+              flag="--zone=$location"
+            else
+              # Regional instance group
+              echo "Processing regional instance group: $instance_group in region: $location"
+              flag="--region=$location"
+            fi
             
-            flag="--region=$region"
             instance_template=$(gcloud compute instance-groups managed describe "$instance_group" $flag --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
 
             if [ -z "$instance_template" ]; then
               echo "Error: Instance template for $instance_group not found."
-              exit 1
+              continue
             fi
 
             version=$(gcloud compute instance-templates describe "$instance_template" --format="get(properties.metadata.items)" | grep -oP 'cloud-sql-proxy/v\K[0-9]+\.[0-9]+\.[0-9]+')
 
             if [ -z "$version" ]; then
               echo "Error: Version not found for instance group $instance_group."
-              exit 1
+              continue
             fi
 
-            echo "*Instance Group*: $instance_group" > proxy_version_${{ matrix.environment }}.txt
+            echo "*Instance Group*: $instance_group" >> proxy_version_${{ matrix.environment }}.txt
             echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
 
@@ -94,17 +93,10 @@ jobs:
               exit 1
           fi
 
-          echo "Response: $response"  # Debug output
           latest_version=$(echo "$response" | jq -r .tag_name 2>/dev/null | sed 's/^v//')
           
-          if [ $? -ne 0 ]; then
-              echo "Error: Failed to parse the latest version."
-              echo "Response was: $response"
-              exit 1
-          fi
-          
           if [ -z "$latest_version" ]; then
-              echo "No version found in the GitHub response."
+              echo "Error: No latest version found in GitHub response."
               exit 1
           fi
           
@@ -114,12 +106,10 @@ jobs:
           update_messages=()
 
           # Loop through instance groups to compare versions
-          while IFS=$'\t' read -r instance_group region; do
-            echo "Processing instance group: $instance_group in region: $region"
+          while IFS=$'\t' read -r instance_group _; do
+            echo "Processing instance group: $instance_group"
             
-            # Adjusted version extraction logic
             current_version=$(grep -oP '\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt || echo "N/A")
-            echo "Current version fetched from file for $instance_group: $current_version"  # Debug output
             
             if [ "$current_version" = "N/A" ]; then
                 echo "Error: Current version for $instance_group is not available."
