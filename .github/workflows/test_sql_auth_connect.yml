@@ -31,6 +31,11 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
       - name: Fetch Active SQL Auth Proxy Instance Groups
         id: fetch_instance_groups
         run: |
@@ -89,13 +94,27 @@ jobs:
             echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
 
-
-
-
-
       - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
-          latest_version=$(curl --silent "https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          echo "Fetching latest version from GitHub..."
+          response=$(curl --silent "https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases/latest")
+          echo "Response: $response"  # Debug output
+
+          latest_version=$(echo "$response" | jq -r .tag_name 2>/dev/null | sed 's/^v//')
+          
+          if [ $? -ne 0 ]; then
+              echo "Error: Failed to parse the latest version."
+              echo "Response was: $response"
+              exit 1
+          fi
+          
+          if [ -z "$latest_version" ]; then
+              echo "No version found in the GitHub response."
+              exit 1
+          fi
+          
+          echo "Latest version is: $latest_version"
+
           current_version=$(grep -oP 'Version: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt)
           
           if [[ "$latest_version" != "$current_version" ]]; then
