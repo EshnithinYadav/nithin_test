@@ -94,12 +94,10 @@ jobs:
               continue
             fi
 
-            # Check if the version is already printed to avoid duplicate output
-            if ! grep -q "*Version*: $version" proxy_version_${{ matrix.environment }}.txt; then
-              echo "*Instance Group*: $instance_group" >> proxy_version_${{ matrix.environment }}.txt
-              echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
-            fi
+            echo "*Instance Group*: $instance_group" >> proxy_version_${{ matrix.environment }}.txt
+            echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
+
 
       - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
@@ -165,7 +163,7 @@ jobs:
           if [ -f proxy_version_${{ matrix.environment }}.txt ]; then
             message=$(cat proxy_version_${{ matrix.environment }}.txt)
             curl -X POST -H 'Content-type: application/json' --data "{
-              \"text\": \"GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):\n\n$message\"
+              \"text\": \"${message}\"  
             }" "${{ env.SLACK_WEBHOOK_URL }}"
           else
             echo "No alert to send for ${{ matrix.environment }}."
@@ -175,5 +173,5 @@ jobs:
         if: failure()
         run: |
           curl -X POST -H 'Content-type: application/json' --data "{
-            \"text\": \"GCP SQL AUTH PROXY VERSION CHECK:\n\nThe workflow for ${{ matrix.environment }} failed.\"
+            \"text\": \"GCP SQL AUTH PROXY VERSION CHECK:\n\nThe workflow for ${{ matrix.environment }} failed.\"  
           }" "${{ env.SLACK_WEBHOOK_URL }}"
