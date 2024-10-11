@@ -163,7 +163,7 @@ jobs:
           if [ -f proxy_version_${{ matrix.environment }}.txt ]; then
             message=$(cat proxy_version_${{ matrix.environment }}.txt)
             curl -X POST -H 'Content-type: application/json' --data "{
-              \"text\": \"GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):\n\n$message\"
+              \"text\": \"${message}\"  
             }" "${{ env.SLACK_WEBHOOK_URL }}"
           else
             echo "No alert to send for ${{ matrix.environment }}."
@@ -173,5 +173,5 @@ jobs:
         if: failure()
         run: |
           curl -X POST -H 'Content-type: application/json' --data "{
-            \"text\": \"GCP SQL AUTH PROXY VERSION CHECK:\n\nThe workflow for ${{ matrix.environment }} failed.\"
+            \"text\": \"GCP SQL AUTH PROXY VERSION CHECK:\n\nThe workflow for ${{ matrix.environment }} failed.\"  
           }" "${{ env.SLACK_WEBHOOK_URL }}"
