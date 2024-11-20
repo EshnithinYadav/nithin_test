@@ -49,8 +49,9 @@ jobs:
             echo "No SQL Auth Proxy instance groups found."
             exit 1
           fi
-          echo "Instance groups fetched:"
+          echo "Instance groups fetched:"  # Debugging
           cat instance_groups.txt
+
 
       - name: Fetch SQL Auth Proxy Version
         run: |
