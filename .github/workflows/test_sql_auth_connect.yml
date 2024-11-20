@@ -1,5 +1,4 @@
 name: GCP SQL Auth Proxy Version Check and Slack Alerts
-
 on:
   schedule:
     - cron: '30 23 * * 1'  # Runs every Monday at 11:30 PM
@@ -29,7 +28,7 @@ jobs:
       - name: Google Auth
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: ${{ matrix.environment == 'stage' && secrets.GCP_SA_KEY_STAGE_PLAIN || secrets.GCP_SA_KEY_PROD_PLAIN }}
+          credentials_json: ${{ matrix.environment == 'stage' && secrets.GCP_SA_KEY_STAGE || secrets.GCP_SA_KEY_PROD }}
 
       - name: Setup Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
@@ -44,42 +43,37 @@ jobs:
       - name: Fetch Active SQL Auth Proxy Instance Groups
         id: fetch_instance_groups
         run: |
-          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, region)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
+          # Fetch all instance groups matching SQL Auth Proxy in the specified project
+          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, zone)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
+          
           if [ ! -s instance_groups.txt ]; then
             echo "No SQL Auth Proxy instance groups found."
             exit 1
           fi
-          echo "Instance groups fetched:"  # Debugging
+          echo "Instance groups fetched:"
           cat instance_groups.txt
-
 
       - name: Fetch SQL Auth Proxy Version
         run: |
-          while IFS=$'\t' read -r instance_group location; do
+          while IFS=$'\t' read -r instance_group zone; do
             if [ -z "$instance_group" ]; then
               echo "Error: Instance group is empty."
               continue
             fi
             
             # Trim whitespace from location
-            location=$(echo "$location" | xargs)
+            zone=$(echo "$zone" | xargs)
 
-            if [[ -z "$location" ]]; then
-              echo "Error: Location for instance group $instance_group is empty."
+            if [[ -z "$zone" ]]; then
+              echo "Error: Zone for instance group $instance_group is empty."
               continue
             fi
-            
-            if [[ $location == *"-a" ]]; then
-              # Zonal instance group
-              echo "Processing zonal instance group: $instance_group in zone: $location"
-              flag="--zone=$location"
-            else
-              # Regional instance group
-              echo "Processing regional instance group: $instance_group in region: $location"
-              flag="--region=$location"
-            fi
-            
-            # Describe the instance group
+
+            # For zonal instance groups, use zone flag
+            echo "Processing instance group: $instance_group in zone: $zone"
+            flag="--zone=$zone"
+
+            # Describe the instance group to fetch the instance template
             instance_template=$(gcloud compute instance-groups managed describe "$instance_group" $flag --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
 
             if [ -z "$instance_template" ]; then
@@ -98,7 +92,6 @@ jobs:
             echo "*Instance Group*: $instance_group" >> proxy_version_${{ matrix.environment }}.txt
             echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
-
 
       - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
@@ -159,7 +152,6 @@ jobs:
               done
             } > proxy_version_${{ matrix.environment }}.txt
           fi
-
 
       - name: Send Slack Alert
         run: |
