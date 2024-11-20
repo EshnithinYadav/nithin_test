@@ -108,12 +108,12 @@ jobs:
               echo "Error: Failed to fetch versions from GitHub."
               exit 1
           fi
-
+      
           # Extract version tags and get the latest two
           versions=$(echo "$response" | jq -r '.[].tag_name | select(. | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | sed 's/^v//')
           latest_version=$(echo "$versions" | sort -V | tail -n 1)
           n_minus_one_version=$(echo "$versions" | sort -V | head -n -1 | tail -n 1)
-
+      
           if [ -z "$latest_version" ] || [ -z "$n_minus_one_version" ]; then
               echo "Error: Could not determine the latest or N-1 version."
               exit 1
@@ -121,29 +121,33 @@ jobs:
           
           echo "Latest version is: $latest_version"
           echo "N-1 version is: $n_minus_one_version"
-
+      
           # Initialize an empty array to hold version update messages
           update_messages=()
-
+      
           # Loop through instance groups to compare versions
           while IFS=$'\t' read -r instance_group _; do
             echo "Processing instance group: $instance_group"
             
-            current_version=$(grep -oP '\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt || echo "N/A")
+            current_version=$(grep -oP "\*Instance Group\*: $instance_group\n\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+" proxy_version_${{ matrix.environment }}.txt || echo "N/A")
             
             if [ "$current_version" = "N/A" ]; then
                 echo "Error: Current version for $instance_group is not available."
                 continue
             fi
+      
+            # Debug: Print versions for verification
+            echo "Current Version: $current_version, N-1 Version: $n_minus_one_version"
             
-            if [[ "$n_minus_one_version" != "$current_version" ]]; then
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: Yes")
-            else
+            # Compare versions
+            if [[ "$current_version" == "$n_minus_one_version" ]]; then
                 update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: No")
+            else
+                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: Yes")
             fi
             
           done < instance_groups.txt
-
+      
           # Check if there are any messages to send
           if [ ${#update_messages[@]} -eq 0 ]; then
             echo "No updates available for SQL Auth Proxy."
@@ -157,6 +161,7 @@ jobs:
               done
             } > proxy_version_${{ matrix.environment }}.txt
           fi
+
 
       - name: Send Slack Alert
         run: |
