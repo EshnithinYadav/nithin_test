@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [prod]  # Added stage environment
+        environment: [stage, prod]  # Added stage environment
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
