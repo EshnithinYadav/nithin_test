@@ -2,7 +2,7 @@ name: GCP SQL Auth Proxy Version Check and Slack Alerts
 
 on:
   schedule:
-    - cron: '0 12 * * 1'  # Runs every Monday at 12:00 PM UTC
+    - cron: '30 23 * * 1'  # Runs every Monday at 11:30 PM
   workflow_dispatch:  # Allows manual triggering of the workflow
 
 jobs:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [prod, stage]  # Added stage environment
+        environment: [stage, prod]  # Added stage environment
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
