@@ -44,13 +44,16 @@ jobs:
       - name: Fetch Active SQL Auth Proxy Instance Groups
         id: fetch_instance_groups
         run: |
-          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, region)" --project="${{ env.GCP_PROJECT_ID }}" > instance_groups.txt
+          echo "Project ID: ${{ env.GCP_PROJECT_ID }}"
+          gcloud compute instance-groups managed list --filter="name:(*sql auth proxy*)" --format="value(name, zone)" --project="${{ env.GCP_PROJECT_ID }}" || echo "Failed to fetch instance groups."
+          
           if [ ! -s instance_groups.txt ]; then
             echo "No SQL Auth Proxy instance groups found."
             exit 1
           fi
           echo "Instance groups fetched:"
           cat instance_groups.txt
+
 
       - name: Fetch SQL Auth Proxy Version
         run: |
