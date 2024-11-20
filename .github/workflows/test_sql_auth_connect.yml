@@ -119,44 +119,31 @@ jobs:
               exit 1
           fi
           
-          echo "Latest version is: $latest_version"
-          echo "N-1 version is: $n_minus_one_version"
+          echo "Latest version: $latest_version"
+          echo "N-1 version: $n_minus_one_version"
 
-          # Initialize an empty array to hold version update messages
           update_messages=()
-
-          # Loop through instance groups to compare versions
-          while IFS=$'\t' read -r instance_group _; do
-            echo "Processing instance group: $instance_group"
-            
-            current_version=$(grep -oP '\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+' proxy_version_${{ matrix.environment }}.txt || echo "N/A")
-            
-            if [ "$current_version" = "N/A" ]; then
-                echo "Error: Current version for $instance_group is not available."
-                continue
-            fi
-            
-            if [[ "$n_minus_one_version" != "$current_version" ]]; then
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: Yes")
+          while IFS=$'\t' read -r instance_group current_version; do
+            if [[ "$current_version" == "$n_minus_one_version" ]]; then
+              update_available="No"
             else
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: No")
+              update_available="Yes"
             fi
-            
-          done < instance_groups.txt
 
-          # Check if there are any messages to send
+            update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: $update_available")
+          done < proxy_version_${{ matrix.environment }}.txt
+
           if [ ${#update_messages[@]} -eq 0 ]; then
-            echo "No updates available for SQL Auth Proxy."
-            echo "No alert to send for ${{ matrix.environment }}."
-          else
-            # Write all update messages to the file
-            {
-              echo "GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):"
-              for message in "${update_messages[@]}"; do
-                echo -e "$message"
-              done
-            } > proxy_version_${{ matrix.environment }}.txt
+            echo "No updates available."
+            exit 0
           fi
+
+          {
+            echo "GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):"
+            for message in "${update_messages[@]}"; do
+              echo -e "$message"
+            done
+          } > proxy_alert_${{ matrix.environment }}.txt
 
       - name: Send Slack Alert
         run: |
