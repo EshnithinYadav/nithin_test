@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [prod, stage]
+        environment: [prod, stage]  # Stage and prod environments
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -24,6 +24,7 @@ jobs:
           else
             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
+          fi
       
       - name: Google Auth
         uses: 'google-github-actions/auth@v2'
@@ -53,50 +54,44 @@ jobs:
 
       - name: Fetch SQL Auth Proxy Version
         run: |
+          > proxy_version_${{ matrix.environment }}.txt
           while IFS=$'\t' read -r instance_group location; do
             if [ -z "$instance_group" ]; then
               echo "Error: Instance group is empty."
               continue
             fi
-            
-            location=$(echo "$location" | xargs)
 
+            location=$(echo "$location" | xargs)
             if [[ -z "$location" ]]; then
               echo "Error: Location for instance group $instance_group is empty."
               continue
             fi
             
             if [[ $location == *"-a" ]]; then
-              echo "Processing zonal instance group: $instance_group in zone: $location"
               flag="--zone=$location"
             else
-              echo "Processing regional instance group: $instance_group in region: $location"
               flag="--region=$location"
             fi
             
             instance_template=$(gcloud compute instance-groups managed describe "$instance_group" $flag --format="value(instanceTemplate)" --project="${{ env.GCP_PROJECT_ID }}")
-
             if [ -z "$instance_template" ]; then
               echo "Error: Instance template for $instance_group not found."
               continue
             fi
 
             version=$(gcloud compute instance-templates describe "$instance_template" --format="get(properties.metadata.items)" | grep -oP 'cloud-sql-proxy/v\K[0-9]+\.[0-9]+\.[0-9]+')
-
             if [ -z "$version" ]; then
               echo "Error: Version not found for instance group $instance_group."
               continue
             fi
 
-            echo "*Instance Group*: $instance_group" >> proxy_version_${{ matrix.environment }}.txt
-            echo "*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
+            echo -e "*Instance Group*: $instance_group\n*Version*: $version" >> proxy_version_${{ matrix.environment }}.txt
           done < instance_groups.txt
 
       - name: Compare and Check for SQL Auth Proxy Version Updates
         run: |
           echo "Fetching all versions from GitHub..."
           response=$(curl --silent --fail "https://api.github.com/repos/GoogleCloudPlatform/cloud-sql-proxy/releases")
-          
           if [ $? -ne 0 ]; then
               echo "Error: Failed to fetch versions from GitHub."
               exit 1
@@ -104,7 +99,7 @@ jobs:
 
           versions=$(echo "$response" | jq -r '.[].tag_name | select(. | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' | sed 's/^v//')
           latest_version=$(echo "$versions" | sort -V | tail -n 1)
-          n_minus_one_version=$(echo "$versions" | sort -V | head -n -1 | tail -n 1)
+          n_minus_one_version=$(echo "$versions" | sort -V | tail -n 2 | head -n 1)
 
           if [ -z "$latest_version" ] || [ -z "$n_minus_one_version" ]; then
               echo "Error: Could not determine the latest or N-1 version."
@@ -114,49 +109,30 @@ jobs:
           echo "Latest version is: $latest_version"
           echo "N-1 version is: $n_minus_one_version"
 
-          update_messages=()
-
+          > final_output_${{ matrix.environment }}.txt
           while IFS=$'\t' read -r instance_group _; do
-            echo "Processing instance group: $instance_group"
-            
-            current_version=$(grep -oP "\*Instance Group\*: $instance_group\n\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+" proxy_version_${{ matrix.environment }}.txt || echo "N/A")
-            
-            echo "Instance Group: $instance_group, Current Version: $current_version"
+            current_version=$(grep -oP "\*Version\*: \K[0-9]+\.[0-9]+\.[0-9]+" proxy_version_${{ matrix.environment }}.txt | head -n 1)
 
-            if [[ "$current_version" == "N/A" ]]; then
-                echo "Error: Current version for $instance_group is not available."
-                continue
-            fi
-            
-            if [[ "$current_version" == "$n_minus_one_version" ]]; then
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: No")
+            if [ "$current_version" = "$n_minus_one_version" ]; then
+              update_available="No"
             else
-                update_messages+=("*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: Yes")
+              update_available="Yes"
             fi
-          done < instance_groups.txt
 
-          if [ ${#update_messages[@]} -eq 0 ]; then
-            echo "No updates available for SQL Auth Proxy."
-          else
-            {
-              echo "GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):"
-              for message in "${update_messages[@]}"; do
-                echo -e "$message"
-              done
-            } > proxy_version_${{ matrix.environment }}.txt
-          fi
+            echo -e "*Instance Group*: $instance_group\n*Version*: $current_version\n*Latest N-1 Version*: $n_minus_one_version\n*Update Available*: $update_available" >> final_output_${{ matrix.environment }}.txt
+          done < instance_groups.txt
 
       - name: Send Slack Alert
         run: |
-          if [ -f proxy_version_${{ matrix.environment }}.txt ]; then
-            message=$(cat proxy_version_${{ matrix.environment }}.txt)
+          if [ -s final_output_${{ matrix.environment }}.txt ]; then
+            message=$(cat final_output_${{ matrix.environment }}.txt)
             curl -X POST -H 'Content-type: application/json' --data "{
-              \"text\": \"${message}\"  
+              \"text\": \"GCP SQL AUTH PROXY VERSION CHECK (${{ matrix.environment }}):\n\n${message}\"
             }" "${{ env.SLACK_WEBHOOK_URL }}"
           else
-            echo "No alert to send for ${{ matrix.environment }}."
+            echo "No updates or alerts to send."
           fi
-      
+
       - name: Send alert to Slack on job failure
         if: failure()
         run: |
