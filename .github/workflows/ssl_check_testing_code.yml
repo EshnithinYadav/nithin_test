@@ -1,118 +1,118 @@
-name: SSL_CERT_EXPIRY_test
+# name: SSL_CERT_EXPIRY_test
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '30 13 * * 1'
+# on:
+#   workflow_dispatch:
+#   schedule:
+#     - cron: '30 13 * * 1'
 
-jobs:
-  check_ssl_expiry:
-    runs-on: ubuntu-latest
+# jobs:
+#   check_ssl_expiry:
+#     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        env: [stage, prod]
+#     strategy:
+#       matrix:
+#         env: [stage, prod]
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
 
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          version: 'latest'
+#       - name: Set up Google Cloud SDK
+#         uses: google-github-actions/setup-gcloud@v1
+#         with:
+#           version: 'latest'
 
-      - name: Set initial environment variables for Slack alerting
-        run: |
-          if [ "${{ matrix.env }}" == "stage" ]; then
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
-          fi
-          echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
+#       - name: Set initial environment variables for Slack alerting
+#         run: |
+#           if [ "${{ matrix.env }}" == "stage" ]; then
+#             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_STAGE }}" >> $GITHUB_ENV
+#           elif [ "${{ matrix.env }}" == "prod" ]; then
+#             echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL_PROD }}" >> $GITHUB_ENV
+#           fi
+#           echo "ENVIRONMENT=${{ matrix.env }}" >> $GITHUB_ENV
 
-      - name: Set environment variables
-        run: |
-          if [ "${{ matrix.env }}" == "stage" ]; then
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}" >> $GITHUB_ENV
-          elif [ "${{ matrix.env }}" == "prod" ]; then
-            echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
-            echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD_PLAIN }}" >> $GITHUB_ENV
-          fi
+#       - name: Set environment variables
+#         run: |
+#           if [ "${{ matrix.env }}" == "stage" ]; then
+#             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_STAGE }}" >> $GITHUB_ENV
+#             echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_STAGE_PLAIN }}" >> $GITHUB_ENV
+#           elif [ "${{ matrix.env }}" == "prod" ]; then
+#             echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_PROD }}" >> $GITHUB_ENV
+#             echo "GCP_SERVICE_ACCOUNT_KEY=${{ secrets.GCP_SA_KEY_PROD_PLAIN }}" >> $GITHUB_ENV
+#           fi
 
-      # - name: Send Slack Alert if setting environment variables failed
-      #   if: failure() && (matrix.env == 'prod' || matrix.env == 'stage')
-      #   run: |
-      #     webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-      #     message="Failed to set environment variables for ${{ env.ENVIRONMENT }} environment."
-      #     curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
+#       # - name: Send Slack Alert if setting environment variables failed
+#       #   if: failure() && (matrix.env == 'prod' || matrix.env == 'stage')
+#       #   run: |
+#       #     webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+#       #     message="Failed to set environment variables for ${{ env.ENVIRONMENT }} environment."
+#       #     curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
 
-      - name: Authenticate to Google Cloud
-        run: |
-          echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
-          gcloud config set project ${{ env.GCP_PROJECT_ID }}
+#       - name: Authenticate to Google Cloud
+#         run: |
+#           echo "${{ env.GCP_SERVICE_ACCOUNT_KEY }}" | base64 --decode > $HOME/gcp-key.json
+#           gcloud auth activate-service-account --key-file=$HOME/gcp-key.json
+#           gcloud config set project ${{ env.GCP_PROJECT_ID }}
 
-      - name: Install gke-gcloud-auth-plugin
-        run: |
-          sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates gnupg
-          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
-          curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/cloud.google.gpg > /dev/null
-          sudo apt-get update && sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin
+#       - name: Install gke-gcloud-auth-plugin
+#         run: |
+#           sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates gnupg
+#           echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+#           curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/cloud.google.gpg > /dev/null
+#           sudo apt-get update && sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin
 
-      - name: Get GKE cluster credentials for all clusters
-        run: |
-          readarray -t CLUSTER_NAMES < <(gcloud container clusters list --format="value(name)")
-          readarray -t CLUSTER_ZONES < <(gcloud container clusters list --format="value(location)")
+#       - name: Get GKE cluster credentials for all clusters
+#         run: |
+#           readarray -t CLUSTER_NAMES < <(gcloud container clusters list --format="value(name)")
+#           readarray -t CLUSTER_ZONES < <(gcloud container clusters list --format="value(location)")
           
-          for i in "${!CLUSTER_NAMES[@]}"; do
-            CLUSTER_NAME="${CLUSTER_NAMES[i]}"
-            CLUSTER_ZONE="${CLUSTER_ZONES[i]}"
-            echo "Fetching credentials for Cluster Name: ${CLUSTER_NAME} in Zone: ${CLUSTER_ZONE}"
-            gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
-          done
+#           for i in "${!CLUSTER_NAMES[@]}"; do
+#             CLUSTER_NAME="${CLUSTER_NAMES[i]}"
+#             CLUSTER_ZONE="${CLUSTER_ZONES[i]}"
+#             echo "Fetching credentials for Cluster Name: ${CLUSTER_NAME} in Zone: ${CLUSTER_ZONE}"
+#             gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${CLUSTER_ZONE}"
+#           done
 
-      - name: Check SSL certificate expiry
-        run: |
-          names=$(kubectl get ingress | awk 'NR > 1 {printf "%s,", $1}' | sed 's/,$//')
-          echo "Following are the INGRESS SSL certificates which will expire within ${{ env.ENVIRONMENT }} ENV:\n" > final_message.txt
+#       - name: Check SSL certificate expiry
+#         run: |
+#           names=$(kubectl get ingress | awk 'NR > 1 {printf "%s,", $1}' | sed 's/,$//')
+#           echo "Following are the INGRESS SSL certificates which will expire within ${{ env.ENVIRONMENT }} ENV:\n" > final_message.txt
 
-          IFS="," read -r -a name_array <<< "$names"
-          for name in "${name_array[@]}"; do
-            tls_cert_name=$(kubectl describe ingress "$name" | awk '/TLS:/ {getline; print $1}')
-            certificate_data=$(kubectl get secrets "$tls_cert_name" -o=json | jq -r '.data."tls.crt"')
-            actual_cert=$(echo "$certificate_data" | base64 -d | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/ {print; if (/END CERTIFICATE/) exit}')
-            dns=$(echo "$actual_cert" | openssl x509 -text -noout | awk '/DNS:/ {print $1; exit}' | sed -e 's/DNS://' -e 's/,$//' | grep -v localhost)
-            validity=$(echo "$actual_cert" | openssl x509 -text -noout | grep -E 'Not After')
-            expiry_date=$(date -d "$(echo "$validity" | sed 's/Not After : //')" +"%s")
-            current_date=$(date +"%s")
-            days_remaining=$(( (expiry_date - current_date) / (60*60*24) ))
-            threshold_days=500
+#           IFS="," read -r -a name_array <<< "$names"
+#           for name in "${name_array[@]}"; do
+#             tls_cert_name=$(kubectl describe ingress "$name" | awk '/TLS:/ {getline; print $1}')
+#             certificate_data=$(kubectl get secrets "$tls_cert_name" -o=json | jq -r '.data."tls.crt"')
+#             actual_cert=$(echo "$certificate_data" | base64 -d | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/ {print; if (/END CERTIFICATE/) exit}')
+#             dns=$(echo "$actual_cert" | openssl x509 -text -noout | awk '/DNS:/ {print $1; exit}' | sed -e 's/DNS://' -e 's/,$//' | grep -v localhost)
+#             validity=$(echo "$actual_cert" | openssl x509 -text -noout | grep -E 'Not After')
+#             expiry_date=$(date -d "$(echo "$validity" | sed 's/Not After : //')" +"%s")
+#             current_date=$(date +"%s")
+#             days_remaining=$(( (expiry_date - current_date) / (60*60*24) ))
+#             threshold_days=500
 
-            if [ "$days_remaining" -le "$threshold_days" ];then
-              echo "Domain_name: $dns  Days Remaining: $days_remaining" >> final_message.txt
-              certificates_to_notify=true
-            fi
-          done
+#             if [ "$days_remaining" -le "$threshold_days" ];then
+#               echo "Domain_name: $dns  Days Remaining: $days_remaining" >> final_message.txt
+#               certificates_to_notify=true
+#             fi
+#           done
 
-          if [ "$certificates_to_notify" = true ];then
-            echo "certificates_to_notify=true" >> $GITHUB_ENV
-            cat final_message.txt > FINAL_MESSAGE.txt
-          else
-            echo "No certificates are expiring within $threshold_days days."
-          fi
+#           if [ "$certificates_to_notify" = true ];then
+#             echo "certificates_to_notify=true" >> $GITHUB_ENV
+#             cat final_message.txt > FINAL_MESSAGE.txt
+#           else
+#             echo "No certificates are expiring within $threshold_days days."
+#           fi
 
-      - name: Send Slack Alert if certificates are expiring
-        if: ${{ env.certificates_to_notify == 'true' }}
-        run: |
-          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-          message_content=$(cat FINAL_MESSAGE.txt)
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message_content'}" "$webhook_url"
+#       - name: Send Slack Alert if certificates are expiring
+#         if: ${{ env.certificates_to_notify == 'true' }}
+#         run: |
+#           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+#           message_content=$(cat FINAL_MESSAGE.txt)
+#           curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY:\n\n$message_content'}" "$webhook_url"
 
-      - name: Send alert to Slack on job failure for each environment
-        if: failure() && env.ENVIRONMENT
-        run: |
-          webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
-          message="The SSL certificate expiry check JOB failed for ${{ env.ENVIRONMENT }} environment."
-          curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
+#       - name: Send alert to Slack on job failure for each environment
+#         if: failure() && env.ENVIRONMENT
+#         run: |
+#           webhook_url="${{ env.SLACK_WEBHOOK_URL }}"
+#           message="The SSL certificate expiry check JOB failed for ${{ env.ENVIRONMENT }} environment."
+#           curl -X POST -H 'Content-type: application/json' --data "{ 'text': 'SSL CERTIFICATE EXPIRY FAILURE:\n\n$message'}" "$webhook_url"
