@@ -32,7 +32,8 @@ jobs:
 
       - name: Fetch Certificate from Google Secrets Manager (Stage)
         run: |
-          kubectl get secret grpc-stage-cert-ssl -n default -o json | jq -r '.data["tls.crt"]' | base64 -d > /tmp/gcp_certificate.crt
+          gcloud secrets versions access latest --secret="${{ secrets.GCLOUD_SECRET_NAME_STAGE }}" --project="${{ secrets.GCP_PROJECT_ID_STAGE }}" > /tmp/gcp_certificate_base64.crt
+          cat /tmp/gcp_certificate_base64.crt | base64 -d > /tmp/gcp_certificate.crt
       - name: Check certificate expiry and details (Stage)
         id: check_expiry_gsm
         run: |
@@ -291,7 +292,8 @@ jobs:
 
       - name: Fetch Certificate from Google Secrets Manager (Prod)
         run: |
-          kubectl get secret grpc-stage-cert-ssl -n default -o json | jq -r '.data["tls.crt"]' | base64 -d > /tmp/gcp_certificate.crt
+          gcloud secrets versions access latest --secret="${{ secrets.GCLOUD_SECRET_NAME_PROD }}" --project="${{ secrets.GCP_PROJECT_ID_PROD }}" > /tmp/gcp_certificate_base64.crt
+          cat /tmp/gcp_certificate_base64.crt | base64 -d > /tmp/gcp_certificate.crt
       - name: Check certificate expiry and details (Prod)
         id: check_expiry_gsm
         run: |
